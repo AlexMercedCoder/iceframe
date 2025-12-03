@@ -71,21 +71,6 @@ export GOOGLE_API_KEY="your-key"
 
 ## Scalability Features
 
-### Caching
-```bash
-pip install "iceframe[cache]"
-```
-- `diskcache>=5.6.0` - Disk-based caching
-
-### Streaming
-```bash
-pip install "iceframe[streaming]"
-```
-- `kafka-python>=2.0.0` - Kafka integration
-
-### Monitoring
-```bash
-pip install "iceframe[monitoring]"
 ```
 - `psutil>=5.9.0` - Memory monitoring
 - `prometheus-client>=0.19.0` - Metrics export

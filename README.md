@@ -92,7 +92,7 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 | **Branching** | Basic support (WIP) | `create_branch`, `fast_forward`, WAP Pattern |
 | **Compaction** | `rewrite_data_files` (limited) | `bin_pack`, `sort` strategies (Polars-based) |
 | **Views** | Catalog-dependent | Unified `ViewManager` abstraction |
-| **Maintenance** | `expire_snapshots` | `GarbageCollector`, `remove_orphan_files` |
+| **Maintenance** | `expire_snapshots` | `GarbageCollector`, **Native** `remove_orphan_files` |
 | **SQL Support** | None | Fluent Query Builder (`select`, `filter`, `join`) |
 | **Ingestion** | `add_files` | `add_files` wrapper + Incremental Ingestion recipes |
 | **Rollback** | `manage_snapshots` | `rollback_to_snapshot`, `rollback_to_timestamp` |
@@ -125,6 +125,7 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 - [Rollback & History](docs/rollback.md)
 - [Bulk Ingestion](docs/ingestion.md)
 - [Catalog Operations](docs/catalog_ops.md)
+- [Native Maintenance](docs/native_maintenance.md)
 - [Async Operations](docs/async.md)
 - [AI Agent](docs/ai_agent.md)
 

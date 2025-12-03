@@ -29,7 +29,7 @@ Modular components for specific capabilities:
 - **Schema Evolution** (`iceframe.schema`): Add/drop/rename/update columns.
 - **Partition Management** (`iceframe.partition`): Manage partition specs.
 - **Data Quality** (`iceframe.quality`): Validate data before/after writes.
-- **Garbage Collection** (`iceframe.gc`): Expire snapshots, remove orphans.
+- **Garbage Collection** (`iceframe.gc`): Snapshot expiration, native orphan file removal.
 - **Compaction** (`iceframe.compaction`): Bin-packing and sorting strategies.
 - **Export** (`iceframe.export`): Export data to Parquet, CSV, JSON.
 - **Incremental Processing** (`iceframe.incremental`): Read only new data, CDC.
