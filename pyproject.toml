@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iceframe"
+version = "0.1.0"
+description = "A DataFrame-like library for working with Apache Iceberg tables"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Alex Merced", email = "alex@alexmerced.com"}
+]
+keywords = ["iceberg", "dataframe", "data engineering", "apache iceberg"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "pyiceberg>=0.6.0",
+    "pyarrow>=14.0.0",
+    "polars>=0.19.0",
+    "python-dotenv>=1.0.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+aws = [
+    "s3fs>=2023.1.0",
+    "boto3>=1.28.0",
+]
+gcs = [
+    "gcsfs>=2023.1.0",
+]
+azure = [
+    "adlfs>=2023.1.0",
+]
+all = [
+    "iceframe[aws,gcs,azure]",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/alexmerced/iceframe"
+Documentation = "https://github.com/alexmerced/iceframe/tree/main/docs"
+Repository = "https://github.com/alexmerced/iceframe"
+Issues = "https://github.com/alexmerced/iceframe/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iceframe*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
