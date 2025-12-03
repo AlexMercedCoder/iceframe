@@ -107,3 +107,9 @@ print(df)
 
 ### Scalability
 - [Scalability Overview](docs/scalability.md)
+
+### Recipes & Patterns
+- [ETL Pipeline](docs/recipes/etl_pipeline.md) - Simple Extract-Transform-Load workflow
+- [SCD Type 2](docs/recipes/scd_type_2.md) - Handling slowly changing dimensions
+- [Incremental Ingestion](docs/recipes/incremental_ingestion.md) - Processing only new data
+- [Data Quality Gate](docs/recipes/data_quality_gate.md) - Write-Audit-Publish pattern
