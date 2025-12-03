@@ -60,9 +60,26 @@ cli = [
     "typer>=0.9.0",
     "rich>=13.0.0",
 ]
+agent = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "google-generativeai>=0.3.0",
+    "rich>=13.0.0",
+]
+cache = [
+    "diskcache>=5.6.0",
+]
+streaming = [
+    "kafka-python>=2.0.0",
+]
+monitoring = [
+    "psutil>=5.9.0",
+    "prometheus-client>=0.19.0",
+]
 
 [project.scripts]
 iceframe = "iceframe.cli:app"
+iceframe-chat = "iceframe.agent_cli:app"
 
 [project.urls]
 Homepage = "https://github.com/alexmerced/iceframe"

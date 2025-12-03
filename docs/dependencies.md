@@ -45,3 +45,52 @@ Async operations use Python's built-in `asyncio` library (no additional dependen
 ```python
 from iceframe.async_ops import AsyncIceFrame
 ```
+
+## AI Agent
+
+The AI agent requires LLM provider packages. Install with:
+
+```bash
+pip install "iceframe[agent]"
+```
+
+This includes:
+- `openai>=1.0.0` - For GPT models
+- `anthropic>=0.18.0` - For Claude models  
+- `google-generativeai>=0.3.0` - For Gemini models
+- `rich>=13.0.0` - For CLI formatting
+
+You only need the API key for the LLM provider you want to use:
+
+```bash
+# Choose one:
+export OPENAI_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"
+export GOOGLE_API_KEY="your-key"
+```
+
+## Scalability Features
+
+### Caching
+```bash
+pip install "iceframe[cache]"
+```
+- `diskcache>=5.6.0` - Disk-based caching
+
+### Streaming
+```bash
+pip install "iceframe[streaming]"
+```
+- `kafka-python>=2.0.0` - Kafka integration
+
+### Monitoring
+```bash
+pip install "iceframe[monitoring]"
+```
+- `psutil>=5.9.0` - Memory monitoring
+- `prometheus-client>=0.19.0` - Metrics export
+
+### All Scalability Features
+```bash
+pip install "iceframe[cache,streaming,monitoring]"
+```

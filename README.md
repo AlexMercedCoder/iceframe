@@ -103,3 +103,7 @@ print(df)
 - [JOIN Support](docs/joins.md)
 - [Branching & Tagging](docs/branching.md)
 - [Async Operations](docs/async.md)
+- [AI Agent](docs/ai_agent.md)
+
+### Scalability
+- [Scalability Overview](docs/scalability.md)

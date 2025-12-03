@@ -26,6 +26,7 @@ class QueryBuilder:
         self._limit = None
         self._with_columns = []
         self._joins = []  # List of (table_name, on, how) tuples
+        self._cache_ttl = None  # Cache TTL in seconds
     
     def select(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
         """Select columns or expressions"""
@@ -94,6 +95,19 @@ class QueryBuilder:
     def with_column(self, name: str, expr: Expression) -> 'QueryBuilder':
         """Add or replace a column"""
         self._with_columns.append((name, expr))
+        return self
+    
+    def cache(self, ttl: Optional[int] = None) -> 'QueryBuilder':
+        """
+        Enable caching for this query.
+        
+        Args:
+            ttl: Time to live in seconds (None = no expiration)
+            
+        Returns:
+            Self for chaining
+        """
+        self._cache_ttl = ttl
         return self
     
     def execute(self) -> pl.DataFrame:

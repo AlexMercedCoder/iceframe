@@ -13,6 +13,9 @@ from iceframe.utils import validate_catalog_config, normalize_table_identifier, 
 from iceframe.operations import TableOperations
 from iceframe.maintenance import TableMaintenance
 from iceframe.export import DataExporter
+from iceframe.pool import CatalogPool
+from iceframe.parallel import ParallelExecutor
+from iceframe.memory import MemoryManager
 
 
 class IceFrame:
@@ -22,13 +25,14 @@ class IceFrame:
     Provides a DataFrame-like API for CRUD operations, maintenance, and exports.
     """
     
-    def __init__(self, catalog_config: Dict[str, Any]):
+    def __init__(self, catalog_config: Dict[str, Any], pool_size: int = 5):
         """
         Initialize IceFrame with catalog configuration.
         
         Args:
             catalog_config: Dictionary containing catalog configuration.
                            Must include 'uri' and 'type' keys.
+            pool_size: Size of connection pool (default: 5)
                            
         Example:
             >>> config = {
@@ -40,7 +44,10 @@ class IceFrame:
         """
         validate_catalog_config(catalog_config)
         self.catalog_config = catalog_config
-        self.catalog = load_catalog("default", **catalog_config)
+        
+        # Initialize connection pool
+        self._pool = CatalogPool(catalog_config, pool_size=pool_size)
+        self.catalog = self._pool.get_connection()
         
         # Initialize helper classes
         self._operations = TableOperations(self.catalog)
@@ -492,6 +499,69 @@ class IceFrame:
         table = self.get_table(table_name)
         stats_obj = TableStats(table)
         return stats_obj.get_stats()
+        
+    def validate_data(self, table_name: str, constraints: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Validate data in a table against constraints.
+        
+        Args:
+            table_name: Name of the table
+            constraints: List of constraints to check
+            
+        Returns:
+            Dictionary with validation results
+        """
+        from iceframe.quality import DataValidator
+        
+        df = self.read_table(table_name)
+        validator = DataValidator()
+        return validator.validate(df, constraints)
+
+    # Scalability Features
+    
+    def read_tables_parallel(
+        self,
+        table_names: List[str],
+        max_workers: int = 4,
+        **read_kwargs
+    ) -> Dict[str, pl.DataFrame]:
+        """
+        Read multiple tables in parallel.
+        
+        Args:
+            table_names: List of table names to read
+            max_workers: Number of worker threads
+            **read_kwargs: Arguments passed to read_table
+            
+        Returns:
+            Dictionary mapping table names to DataFrames
+        """
+        from iceframe.parallel import ParallelExecutor
+        executor = ParallelExecutor(max_workers=max_workers)
+        return executor.read_tables_parallel(self, table_names, **read_kwargs)
+        
+    def read_table_chunked(
+        self,
+        table_name: str,
+        chunk_size: int = 10000,
+        columns: Optional[List[str]] = None,
+        max_memory_mb: Optional[int] = None
+    ):
+        """
+        Read table in chunks to manage memory usage.
+        
+        Args:
+            table_name: Name of the table
+            chunk_size: Number of rows per chunk
+            columns: Optional columns to select
+            max_memory_mb: Optional memory limit in MB
+            
+        Yields:
+            DataFrame chunks
+        """
+        from iceframe.memory import MemoryManager
+        manager = MemoryManager(max_memory_mb=max_memory_mb)
+        return manager.read_table_chunked(self, table_name, chunk_size, columns)
         
     def profile_column(self, table_name: str, column_name: str) -> Dict[str, Any]:
         """

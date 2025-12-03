@@ -33,9 +33,24 @@ Modular components for specific capabilities:
 - **Table Statistics** (`iceframe.stats`): Metadata and column profiling.
 - **Branching** (`iceframe.branching`): Create branches and tag snapshots.
 - **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
+- **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
 
-### 5. CLI
+### 5. Scalability Features
+- **Query Caching** (`iceframe.cache`): In-memory and disk-based result caching
+- **Parallel Operations** (`iceframe.parallel`): Concurrent table operations
+- **Connection Pooling** (`iceframe.pool`): Catalog connection pooling
+- **Memory Management** (`iceframe.memory`): Chunked reading and memory limits
+- **Query Optimization** (`iceframe.optimizer`): Automatic query optimization
+- **Monitoring** (`iceframe.monitoring`): Query metrics and observability
+- **Streaming** (`iceframe.streaming`): Micro-batch and Kafka streaming
+- **Data Skipping** (`iceframe.skipping`): File-level filtering
+- **Federation** (`iceframe.federation`): Multi-catalog support
+
+### 6. CLI
 A command-line interface (`iceframe.cli`) built with `typer` for quick table inspection and management.
+
+### 6. AI Chat
+An interactive AI assistant (`iceframe-chat`) for natural language interaction with Iceberg tables.
 
 ## Data Flow
 
