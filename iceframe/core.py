@@ -11,7 +11,7 @@ from pyiceberg.table import Table
 
 from iceframe.utils import validate_catalog_config, normalize_table_identifier, format_table_identifier
 from iceframe.operations import TableOperations
-from iceframe.maintenance import TableMaintenance
+
 from iceframe.export import DataExporter
 from iceframe.pool import CatalogPool
 from iceframe.parallel import ParallelExecutor
@@ -49,9 +49,8 @@ class IceFrame:
         self._pool = CatalogPool(catalog_config, pool_size=pool_size)
         self.catalog = self._pool.get_connection()
         
-        # Initialize helper classes
-        self._operations = TableOperations(self.catalog)
-        self._maintenance = TableMaintenance(self.catalog)
+        self._catalog_pool = CatalogPool(self.config)
+        self.catalog = self._catalog_pool.get_catalog()
         self._exporter = DataExporter()
     
     def create_table(
@@ -133,19 +132,21 @@ class IceFrame:
         self,
         table_name: str,
         data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
+        branch: Optional[str] = None,
     ) -> None:
         """
-        Append data to an existing table.
+        Append data to an existing Iceberg table.
         
         Args:
             table_name: Name of the table
             data: Data to append (Polars DataFrame, PyArrow Table, or dict)
+            branch: Optional branch name to write to (for WAP pattern)
             
         Example:
-            >>> df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
+            >>> df = pl.DataFrame({"id": [1], "name": ["Alice"]})
             >>> ice.append_to_table("my_table", df)
         """
-        self._operations.append_to_table(table_name, data)
+        self._operations.append_to_table(table_name, data, branch=branch)
     
     def overwrite_table(
         self,
@@ -260,7 +261,17 @@ class IceFrame:
         Example:
             >>> ice.expire_snapshots("my_table", older_than_days=30, retain_last=5)
         """
-        self._maintenance.expire_snapshots(table_name, older_than_days, retain_last)
+        from iceframe.gc import GarbageCollector
+        from datetime import datetime, timedelta
+        
+        table = self.get_table(table_name)
+        gc = GarbageCollector(table)
+        
+        older_than_ms = int(
+            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
+        )
+        
+        gc.expire_snapshots(older_than_ms=older_than_ms, retain_last=retain_last)
     
     def remove_orphan_files(self, table_name: str, older_than_days: int = 3) -> None:
         """
@@ -273,7 +284,17 @@ class IceFrame:
         Example:
             >>> ice.remove_orphan_files("my_table", older_than_days=7)
         """
-        self._maintenance.remove_orphan_files(table_name, older_than_days)
+        from iceframe.gc import GarbageCollector
+        from datetime import datetime, timedelta
+        
+        table = self.get_table(table_name)
+        gc = GarbageCollector(table)
+        
+        older_than_ms = int(
+            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
+        )
+        
+        gc.remove_orphan_files(older_than_ms=older_than_ms)
     
     def compact_data_files(
         self,
@@ -290,7 +311,12 @@ class IceFrame:
         Example:
             >>> ice.compact_data_files("my_table", target_file_size_mb=256)
         """
-        self._maintenance.compact_data_files(table_name, target_file_size_mb)
+        from iceframe.compaction import CompactionManager
+        
+        table = self.get_table(table_name)
+        compactor = CompactionManager(table)
+        
+        compactor.bin_pack(target_file_size_mb=target_file_size_mb)
     
     # Export operations
     
@@ -578,6 +604,33 @@ class IceFrame:
         table = self.get_table(table_name)
         stats_obj = TableStats(table)
         return stats_obj.profile_column(column_name)
+
+    # Advanced Features
+    
+    def create_view(self, view_name: str, sql: str, replace: bool = False) -> Any:
+        """Create a view"""
+        from iceframe.views import ViewManager
+        manager = ViewManager(self.catalog)
+        return manager.create_view(view_name, sql, replace=replace)
+        
+    def drop_view(self, view_name: str) -> None:
+        """Drop a view"""
+        from iceframe.views import ViewManager
+        manager = ViewManager(self.catalog)
+        manager.drop_view(view_name)
+        
+    def call_procedure(self, table_name: str, procedure_name: str, **kwargs) -> Any:
+        """Call a stored procedure on a table"""
+        from iceframe.procedures import StoredProcedures
+        table = self.get_table(table_name)
+        procs = StoredProcedures(table)
+        return procs.call(procedure_name, **kwargs)
+        
+    def evolve_partition(self, table_name: str) -> 'PartitionEvolution':
+        """Get partition evolution helper"""
+        from iceframe.evolution import PartitionEvolution
+        table = self.get_table(table_name)
+        return PartitionEvolution(table)
 
     # Branching Support
     

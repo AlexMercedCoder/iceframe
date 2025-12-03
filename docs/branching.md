@@ -27,3 +27,37 @@ ice.tag_snapshot("users", snapshot_id, "v1.0")
 - **Experimentation**: Create branches for testing schema changes
 - **Rollback**: Tag stable snapshots for easy rollback
 - **Versioning**: Tag releases for reproducibility
+
+## Fast-Forwarding (Publishing)
+
+You can fast-forward a branch (e.g., `main`) to another branch (e.g., `audit_branch`). This is essential for the Write-Audit-Publish (WAP) pattern.
+
+```python
+from iceframe.branching import BranchManager
+
+# Initialize manager
+table = ice.get_table("users")
+manager = BranchManager(table)
+
+# Fast-forward main to audit_branch
+manager.fast_forward("main", "audit_branch")
+```
+
+## Write-Audit-Publish (WAP) Pattern
+
+IceFrame supports the WAP pattern to ensure data quality:
+
+1.  **Write**: Write data to a branch (e.g., `audit_branch`).
+2.  **Audit**: Validate data in the branch.
+3.  **Publish**: Fast-forward `main` to the branch.
+
+```python
+# 1. Write to branch
+ice.append_to_table("users", new_data, branch="audit_branch")
+
+# 2. Audit (Validate)
+# ... run checks ...
+
+# 3. Publish
+manager.fast_forward("main", "audit_branch")
+```

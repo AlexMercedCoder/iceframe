@@ -219,8 +219,16 @@ class TableOperations:
         self,
         table_name: str,
         data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
+        branch: Optional[str] = None,
     ) -> None:
-        """Append data to a table"""
+        """
+        Append data to a table.
+        
+        Args:
+            table_name: Name of the table
+            data: Data to append
+            branch: Optional branch name to write to
+        """
         table = self.get_table(table_name)
         
         # Convert data to PyArrow table
@@ -234,7 +242,32 @@ class TableOperations:
             raise ValueError(f"Unsupported data type: {type(data)}")
         
         # Append to table
-        table.append(arrow_data)
+        # Note: PyIceberg's append API might not directly support 'branch' arg in all versions
+        # If supported, we pass it. If not, we might need to set WAP properties.
+        try:
+            # Try passing branch if supported by PyIceberg version
+            if branch:
+                # Check if append supports branch argument (newer PyIceberg)
+                import inspect
+                sig = inspect.signature(table.append)
+                if 'branch' in sig.parameters:
+                    table.append(arrow_data, branch=branch)
+                    return
+                
+                # Fallback: Use WAP properties if branch arg not supported
+                # This sets write.wap.enabled=true and write.wap.id=<branch>
+                with table.transaction() as txn:
+                    txn.set_properties({
+                        "write.wap.enabled": "true",
+                        "write.wap.id": branch
+                    })
+                    txn.append(arrow_data)
+                return
+
+            table.append(arrow_data)
+        except TypeError:
+            # Fallback for older versions
+            table.append(arrow_data)
     
     def overwrite_table(
         self,

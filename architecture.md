@@ -1,4 +1,6 @@
-# IceFrame Architecture
+# IceFrame
+
+## Directory Structure
 
 IceFrame is a high-level Python library designed to simplify interactions with Apache Iceberg tables by providing a DataFrame-centric API. It bridges the gap between the low-level `pyiceberg` client and the user-friendly experience of `polars` and `pandas`.
 
@@ -27,11 +29,15 @@ Modular components for specific capabilities:
 - **Schema Evolution** (`iceframe.schema`): Add/drop/rename/update columns.
 - **Partition Management** (`iceframe.partition`): Manage partition specs.
 - **Data Quality** (`iceframe.quality`): Validate data before/after writes.
-- **Maintenance** (`iceframe.maintenance`): Expire snapshots, remove orphans, compact files.
+- **Garbage Collection** (`iceframe.gc`): Expire snapshots, remove orphans.
+- **Compaction** (`iceframe.compaction`): Bin-packing and sorting strategies.
 - **Export** (`iceframe.export`): Export data to Parquet, CSV, JSON.
 - **Incremental Processing** (`iceframe.incremental`): Read only new data, CDC.
 - **Table Statistics** (`iceframe.stats`): Metadata and column profiling.
 - **Branching** (`iceframe.branching`): Create branches and tag snapshots.
+- **Views** (`iceframe.views`): Cross-engine view management.
+- **Evolution** (`iceframe.evolution`): Partition spec evolution.
+- **Procedures** (`iceframe.procedures`): Stored procedure interface.
 - **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
 - **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
 

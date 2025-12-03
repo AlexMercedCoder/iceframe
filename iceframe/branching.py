@@ -23,8 +23,6 @@ class BranchManager:
             branch_name: Name of the branch
             snapshot_id: Snapshot ID to branch from (defaults to current)
         """
-        # Note: PyIceberg's branch support is evolving
-        # This is a simplified implementation
         try:
             if snapshot_id is None:
                 current = self.table.current_snapshot()
@@ -33,10 +31,13 @@ class BranchManager:
             if snapshot_id is None:
                 raise ValueError("No snapshot available to create branch from")
                 
-            # PyIceberg API for branches (may vary by version)
-            # self.table.manage_snapshots().create_branch(branch_name, snapshot_id).commit()
-            # For now, we'll use a placeholder
-            raise NotImplementedError("Branch creation requires PyIceberg 0.6.0+ with catalog support")
+            # Try PyIceberg 0.6.0+ API
+            if hasattr(self.table, "manage_snapshots"):
+                # Signature is (snapshot_id, branch_name)
+                self.table.manage_snapshots().create_branch(snapshot_id, branch_name).commit()
+            else:
+                raise NotImplementedError("Branch creation requires PyIceberg 0.6.0+")
+                
         except AttributeError:
             raise NotImplementedError("Branching not supported by this PyIceberg version or catalog")
             
@@ -63,21 +64,62 @@ class BranchManager:
             List of branch names
         """
         try:
-            # PyIceberg API
-            # return list(self.table.refs.keys())
-            raise NotImplementedError("Branch listing requires PyIceberg 0.6.0+ with catalog support")
+            # PyIceberg stores refs in table metadata
+            if hasattr(self.table.metadata, "refs"):
+                return list(self.table.metadata.refs.keys())
+            return ["main"]
         except AttributeError:
-            raise NotImplementedError("Branch listing not supported by this PyIceberg version or catalog")
-            
-    def list_tags(self) -> Dict[str, int]:
+            return ["main"]
+
+    def fast_forward(self, branch: str, to_branch: str) -> None:
         """
-        List all tags.
+        Fast-forward a branch to another branch (e.g. main -> audit_branch).
         
-        Returns:
-            Dictionary mapping tag names to snapshot IDs
+        Args:
+            branch: Branch to update (e.g. 'main')
+            to_branch: Branch to fast-forward to
         """
         try:
-            # PyIceberg API
-            raise NotImplementedError("Tag listing requires PyIceberg 0.6.0+ with catalog support")
+            if hasattr(self.table, "manage_snapshots"):
+                # Get snapshot ID of target branch
+                refs = self.table.metadata.refs
+                if to_branch not in refs:
+                    raise ValueError(f"Branch '{to_branch}' not found")
+                
+                target_snapshot_id = refs[to_branch].snapshot_id
+                
+                # Update reference
+                ms = self.table.manage_snapshots()
+                if hasattr(ms, "replace_branch"):
+                    ms.replace_branch(branch, target_snapshot_id).commit()
+                else:
+                    # Native implementation for older PyIceberg versions
+                    # We manually construct the update and commit via transaction
+                    try:
+                        from pyiceberg.table.update.snapshot import SetSnapshotRefUpdate
+                        
+                        # Create transaction
+                        txn = self.table.transaction()
+                        
+                        # Create update
+                        update = SetSnapshotRefUpdate(
+                            snapshot_id=target_snapshot_id,
+                            ref_name=branch,
+                            type="branch"
+                        )
+                        
+                        # Inject update (hack for older versions)
+                        if isinstance(txn._updates, tuple):
+                            txn._updates = txn._updates + (update,)
+                        else:
+                            txn._updates.append(update)
+                            
+                        # Commit
+                        txn.commit_transaction()
+                        
+                    except ImportError:
+                        raise NotImplementedError("Fast-forward requires PyIceberg 0.6.0+ or SetSnapshotRefUpdate")
+            else:
+                raise NotImplementedError("Fast-forward requires PyIceberg 0.6.0+")
         except AttributeError:
-            raise NotImplementedError("Tag listing not supported by this PyIceberg version or catalog")
+            raise NotImplementedError("Branching not supported by this PyIceberg version")

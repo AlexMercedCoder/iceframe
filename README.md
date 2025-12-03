@@ -100,6 +100,8 @@ print(df)
 ### Advanced Features
 - [Incremental Processing](docs/incremental.md)
 - [Table Statistics](docs/statistics.md)
+- [Scalability Features](docs/scalability.md)
+- [Advanced Iceberg Features](docs/advanced_features.md)
 - [JOIN Support](docs/joins.md)
 - [Branching & Tagging](docs/branching.md)
 - [Async Operations](docs/async.md)
