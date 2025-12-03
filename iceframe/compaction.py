@@ -108,3 +108,19 @@ class CompactionManager:
             "strategy": "sort",
             "sort_order": str(sort_order)
         }
+
+    def rewrite_manifests(self) -> None:
+        """
+        Rewrite manifest files to optimize metadata.
+        """
+        try:
+            # PyIceberg support check
+            if hasattr(self.table, "rewrite_manifests"):
+                self.table.rewrite_manifests().commit()
+            else:
+                # Fallback or error if not supported
+                # Currently PyIceberg doesn't expose this widely in public API for all catalogs
+                # but it's a standard Iceberg operation
+                raise NotImplementedError("Manifest rewriting not supported by this PyIceberg version")
+        except AttributeError:
+            raise NotImplementedError("Manifest rewriting not supported by this PyIceberg version")

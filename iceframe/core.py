@@ -49,8 +49,8 @@ class IceFrame:
         self._pool = CatalogPool(catalog_config, pool_size=pool_size)
         self.catalog = self._pool.get_connection()
         
-        self._catalog_pool = CatalogPool(self.config)
-        self.catalog = self._catalog_pool.get_catalog()
+
+        self._operations = TableOperations(self.catalog)
         self._exporter = DataExporter()
     
     def create_table(
@@ -631,6 +631,33 @@ class IceFrame:
         from iceframe.evolution import PartitionEvolution
         table = self.get_table(table_name)
         return PartitionEvolution(table)
+
+    def register_table(self, table_name: str, metadata_location: str) -> Any:
+        """Register an existing table"""
+        from iceframe.catalog_ops import CatalogOperations
+        ops = CatalogOperations(self.catalog)
+        return ops.register_table(table_name, metadata_location)
+        
+    def add_files(self, table_name: str, file_paths: List[str]) -> None:
+        """Add existing data files to table"""
+        from iceframe.ingestion import DataIngestion
+        table = self.get_table(table_name)
+        ingestion = DataIngestion(table)
+        ingestion.add_files(file_paths)
+        
+    def rollback_to_snapshot(self, table_name: str, snapshot_id: int) -> None:
+        """Rollback to snapshot"""
+        from iceframe.rollback import RollbackManager
+        table = self.get_table(table_name)
+        rm = RollbackManager(table)
+        rm.rollback_to_snapshot(snapshot_id)
+        
+    def rollback_to_timestamp(self, table_name: str, timestamp_ms: int) -> None:
+        """Rollback to timestamp"""
+        from iceframe.rollback import RollbackManager
+        table = self.get_table(table_name)
+        rm = RollbackManager(table)
+        rm.rollback_to_timestamp(timestamp_ms)
 
     # Branching Support
     

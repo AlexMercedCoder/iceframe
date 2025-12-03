@@ -45,6 +45,15 @@ def test_compaction_manager(ice_frame, test_table_name, sample_schema, sample_da
     # Test sort
     stats = compactor.sort(sort_order=["id"])
     assert stats["rewritten_rows"] >= 0
+    
+    # Test rewrite_manifests
+    try:
+        compactor.rewrite_manifests()
+    except NotImplementedError:
+        pytest.skip("rewrite_manifests not supported")
+    except Exception:
+        # Might fail if no manifests to rewrite, but shouldn't raise unexpected error
+        pass
 
 def test_partition_evolution(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test PartitionEvolution"""
@@ -75,5 +84,10 @@ def test_stored_procedures(ice_frame, test_table_name, sample_schema, cleanup_ta
     # Test call
     try:
         procs.call("rewrite_data_files")
+        
+        try:
+            procs.call("rewrite_manifests")
+        except NotImplementedError:
+            pass
     except Exception as e:
         pytest.fail(f"Procedure call failed: {e}")

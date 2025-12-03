@@ -38,6 +38,9 @@ Modular components for specific capabilities:
 - **Views** (`iceframe.views`): Cross-engine view management.
 - **Evolution** (`iceframe.evolution`): Partition spec evolution.
 - **Procedures** (`iceframe.procedures`): Stored procedure interface.
+- **Rollback** (`iceframe.rollback`): Snapshot rollback and management.
+- **Ingestion** (`iceframe.ingestion`): Bulk file ingestion.
+- **Catalog Ops** (`iceframe.catalog_ops`): Catalog-level operations.
 - **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
 - **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
 

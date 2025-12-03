@@ -80,6 +80,24 @@ df = (ice.query("my_table")
 print(df)
 ```
 
+
+## Feature Comparison: IceFrame vs PyIceberg
+
+IceFrame builds on top of PyIceberg, adding high-level abstractions and missing features.
+
+| Feature | PyIceberg (Native) | IceFrame (Enhanced) |
+| :--- | :--- | :--- |
+| **Table CRUD** | Low-level API | Simplified `create_table`, `drop_table` |
+| **Data Writing** | Arrow/Pandas integration | Polars integration, Auto-schema inference |
+| **Branching** | Basic support (WIP) | `create_branch`, `fast_forward`, WAP Pattern |
+| **Compaction** | `rewrite_data_files` (limited) | `bin_pack`, `sort` strategies (Polars-based) |
+| **Views** | Catalog-dependent | Unified `ViewManager` abstraction |
+| **Maintenance** | `expire_snapshots` | `GarbageCollector`, `remove_orphan_files` |
+| **SQL Support** | None | Fluent Query Builder (`select`, `filter`, `join`) |
+| **Ingestion** | `add_files` | `add_files` wrapper + Incremental Ingestion recipes |
+| **Rollback** | `manage_snapshots` | `rollback_to_snapshot`, `rollback_to_timestamp` |
+| **Async** | None | `AsyncIceFrame` for non-blocking I/O |
+
 ## Documentation
 
 - [Architecture](architecture.md)
@@ -104,6 +122,9 @@ print(df)
 - [Advanced Iceberg Features](docs/advanced_features.md)
 - [JOIN Support](docs/joins.md)
 - [Branching & Tagging](docs/branching.md)
+- [Rollback & History](docs/rollback.md)
+- [Bulk Ingestion](docs/ingestion.md)
+- [Catalog Operations](docs/catalog_ops.md)
 - [Async Operations](docs/async.md)
 - [AI Agent](docs/ai_agent.md)
 
