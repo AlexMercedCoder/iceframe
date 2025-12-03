@@ -25,6 +25,7 @@ class QueryBuilder:
         self._order_by_exprs = []
         self._limit = None
         self._with_columns = []
+        self._joins = []  # List of (table_name, on, how) tuples
     
     def select(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
         """Select columns or expressions"""
@@ -43,6 +44,29 @@ class QueryBuilder:
     def where(self, expr: Expression) -> 'QueryBuilder':
         """Alias for filter"""
         return self.filter(expr)
+    
+    def join(
+        self,
+        other_table: str,
+        on: Union[str, List[str]],
+        how: str = "inner"
+    ) -> 'QueryBuilder':
+        """
+        Join with another table.
+        
+        Args:
+            other_table: Name of the table to join with
+            on: Column name(s) to join on
+            how: Join type - "inner", "left", "right", "outer"
+            
+        Returns:
+            Self for chaining
+        """
+        if how not in ["inner", "left", "right", "outer"]:
+            raise ValueError(f"Invalid join type: {how}. Must be one of: inner, left, right, outer")
+            
+        self._joins.append((other_table, on, how))
+        return self
     
     def group_by(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
         """Group by columns or expressions"""
@@ -97,11 +121,6 @@ class QueryBuilder:
             combined_filter = AlwaysTrue()
             
         # 2. Read from Iceberg
-        # We can also push down column selection if no complex expressions in select
-        # But for simplicity and to support complex expressions, we'll read required columns
-        # Optimization: Scan only columns needed for select, filter, group_by, order_by
-        
-        # Get the table
         table = self.operations.get_table(self.table_name)
         scan = table.scan(row_filter=combined_filter)
         
@@ -109,7 +128,19 @@ class QueryBuilder:
         arrow_table = scan.to_arrow()
         df = pl.from_arrow(arrow_table)
         
-        # 3. Polars Post-processing
+        # 3. Handle Joins
+        if self._joins:
+            for join_table_name, on, how in self._joins:
+                # Read the join table
+                join_table = self.operations.get_table(join_table_name)
+                join_scan = join_table.scan()
+                join_arrow = join_scan.to_arrow()
+                join_df = pl.from_arrow(join_arrow)
+                
+                # Perform join
+                df = df.join(join_df, on=on, how=how)
+        
+        # 4. Polars Post-processing
         
         # Apply remaining filters
         for expr in polars_filters:

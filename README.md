@@ -82,10 +82,24 @@ print(df)
 
 ## Documentation
 
+- [Architecture](architecture.md)
 - [Creating Tables](docs/creating_tables.md)
 - [Reading Tables](docs/reading_tables.md)
 - [Updating Tables](docs/updating_tables.md)
 - [Deleting Tables](docs/deleting_tables.md)
+- [Query Builder API](docs/query_builder.md)
+- [Namespace Management](docs/namespaces.md)
+- [Schema Evolution](docs/schema_evolution.md)
+- [Partition Management](docs/partitioning.md)
+- [Data Quality](docs/data_quality.md)
 - [Table Maintenance](docs/maintenance.md)
 - [Exporting Data](docs/export.md)
-- [Query Builder API](docs/query_builder.md)
+- [CLI Usage](docs/cli.md)
+- [Dependencies](docs/dependencies.md)
+
+### Advanced Features
+- [Incremental Processing](docs/incremental.md)
+- [Table Statistics](docs/statistics.md)
+- [JOIN Support](docs/joins.md)
+- [Branching & Tagging](docs/branching.md)
+- [Async Operations](docs/async.md)

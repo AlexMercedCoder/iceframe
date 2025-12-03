@@ -28,20 +28,15 @@ class IceFrame:
         
         Args:
             catalog_config: Dictionary containing catalog configuration.
-                Required keys: 'uri', 'type'
-                Optional keys: 'token', 'oauth2-server-uri', 'warehouse',
-                              'header.X-Iceberg-Access-Delegation'
-        
+                           Must include 'uri' and 'type' keys.
+                           
         Example:
             >>> config = {
-            ...     "uri": "https://catalog.dremio.cloud/api/iceberg",
-            ...     "oauth2-server-uri": "https://login.dremio.cloud/oauth/token",
-            ...     "token": "your_token",
-            ...     "warehouse": "firstproject",
-            ...     "header.X-Iceberg-Access-Delegation": "vended-credentials",
-            ...     "type": "rest"
+            ...     "uri": "http://localhost:8181",
+            ...     "type": "rest",
+            ...     "warehouse": "s3://my-bucket/warehouse"
             ... }
-            >>> ice = IceFrame(catalog_config=config)
+            >>> ice = IceFrame(config)
         """
         validate_catalog_config(catalog_config)
         self.catalog_config = catalog_config
@@ -422,3 +417,124 @@ class IceFrame:
         from iceframe.partition import PartitionManager
         table = self.get_table(table_name)
         return PartitionManager(table)
+
+    # Data Quality
+    
+    @property
+    def validator(self):
+        """Access data validator"""
+        from iceframe.quality import DataValidator
+        return DataValidator()
+
+    # Incremental Processing
+    
+    def read_incremental(
+        self,
+        table_name: str,
+        since_snapshot_id: Optional[int] = None,
+        since_timestamp: Optional[int] = None,
+        columns: Optional[List[str]] = None
+    ) -> pl.DataFrame:
+        """
+        Read only data added since a specific snapshot or timestamp.
+        
+        Args:
+            table_name: Name of the table
+            since_snapshot_id: Read data added after this snapshot ID
+            since_timestamp: Read data added after this timestamp (ms since epoch)
+            columns: Optional list of columns to select
+            
+        Returns:
+            Polars DataFrame with incremental data
+        """
+        from iceframe.incremental import IncrementalReader
+        table = self.get_table(table_name)
+        reader = IncrementalReader(table)
+        return reader.read_incremental(since_snapshot_id, since_timestamp, columns)
+        
+    def get_changes(
+        self,
+        table_name: str,
+        from_snapshot_id: int,
+        to_snapshot_id: Optional[int] = None,
+        columns: Optional[List[str]] = None
+    ) -> Dict[str, pl.DataFrame]:
+        """
+        Get changes (inserts, deletes) between two snapshots.
+        
+        Args:
+            table_name: Name of the table
+            from_snapshot_id: Starting snapshot ID
+            to_snapshot_id: Ending snapshot ID (defaults to current)
+            columns: Optional list of columns to select
+            
+        Returns:
+            Dictionary with 'added', 'deleted', 'modified' DataFrames
+        """
+        from iceframe.incremental import IncrementalReader
+        table = self.get_table(table_name)
+        reader = IncrementalReader(table)
+        return reader.get_changes(from_snapshot_id, to_snapshot_id, columns)
+
+    # Table Statistics
+    
+    def stats(self, table_name: str) -> Dict[str, Any]:
+        """
+        Get comprehensive table statistics.
+        
+        Args:
+            table_name: Name of the table
+            
+        Returns:
+            Dictionary with table statistics
+        """
+        from iceframe.stats import TableStats
+        table = self.get_table(table_name)
+        stats_obj = TableStats(table)
+        return stats_obj.get_stats()
+        
+    def profile_column(self, table_name: str, column_name: str) -> Dict[str, Any]:
+        """
+        Profile a specific column with statistics.
+        
+        Args:
+            table_name: Name of the table
+            column_name: Name of the column to profile
+            
+        Returns:
+            Dictionary with column statistics
+        """
+        from iceframe.stats import TableStats
+        table = self.get_table(table_name)
+        stats_obj = TableStats(table)
+        return stats_obj.profile_column(column_name)
+
+    # Branching Support
+    
+    def create_branch(self, table_name: str, branch_name: str, snapshot_id: Optional[int] = None) -> None:
+        """
+        Create a new branch.
+        
+        Args:
+            table_name: Name of the table
+            branch_name: Name of the branch
+            snapshot_id: Snapshot ID to branch from (defaults to current)
+        """
+        from iceframe.branching import BranchManager
+        table = self.get_table(table_name)
+        manager = BranchManager(table)
+        manager.create_branch(branch_name, snapshot_id)
+        
+    def tag_snapshot(self, table_name: str, snapshot_id: int, tag_name: str) -> None:
+        """
+        Tag a specific snapshot.
+        
+        Args:
+            table_name: Name of the table
+            snapshot_id: Snapshot ID to tag
+            tag_name: Name for the tag
+        """
+        from iceframe.branching import BranchManager
+        table = self.get_table(table_name)
+        manager = BranchManager(table)
+        manager.tag_snapshot(snapshot_id, tag_name)
