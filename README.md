@@ -1,4 +1,4 @@
-# IceFrame
+# IceFrame (Alpha)
 
 A DataFrame-like library for working with Apache Iceberg tables using REST catalogs with local execution.
 
