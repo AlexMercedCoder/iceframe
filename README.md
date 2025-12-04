@@ -128,6 +128,8 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 - [Native Maintenance](docs/native_maintenance.md)
 - [Async Operations](docs/async.md)
 - [AI Agent](docs/ai_agent.md)
+- [Pydantic Integration](docs/pydantic.md)
+- [Notebook Integration](docs/notebooks.md)
 
 ### Scalability
 - [Scalability Overview](docs/scalability.md)

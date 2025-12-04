@@ -43,6 +43,8 @@ Modular components for specific capabilities:
 - **Catalog Ops** (`iceframe.catalog_ops`): Catalog-level operations.
 - **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
 - **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
+- **Pydantic Integration** (`iceframe.pydantic`): Schema conversion and data validation.
+- **Notebook Magics** (`iceframe.magics`): IPython magic commands (`%iceframe`, `%%iceql`).
 
 ### 5. Scalability Features
 - **Query Caching** (`iceframe.cache`): In-memory and disk-based result caching

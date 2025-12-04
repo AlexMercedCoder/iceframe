@@ -23,6 +23,29 @@ Install with:
 pip install "iceframe[cli]"
 ```
 
+### Pydantic (`[pydantic]`)
+
+Required for Pydantic integration.
+
+- `pydantic>=2.0.0`: Data validation and settings management
+
+Install with:
+```bash
+pip install "iceframe[pydantic]"
+```
+
+### Notebook (`[notebook]`)
+
+Required for Jupyter Notebook integration.
+
+- `ipython>=8.0.0`: Interactive computing
+- `ipywidgets>=8.0.0`: Interactive HTML widgets
+
+Install with:
+```bash
+pip install "iceframe[notebook]"
+```
+
 ### Cloud Storage (`[aws]`, `[gcs]`, `[azure]`)
 
 Required for accessing cloud storage backends.

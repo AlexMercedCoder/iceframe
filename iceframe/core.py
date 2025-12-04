@@ -2,12 +2,19 @@
 Core IceFrame class - Main entry point for the library
 """
 
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Type
 import pyarrow as pa
 import polars as pl
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+try:
+    from pydantic import BaseModel
+    HAS_PYDANTIC = True
+except ImportError:
+    HAS_PYDANTIC = False
+    BaseModel = Any # type: ignore
+
 
 from iceframe.utils import validate_catalog_config, normalize_table_identifier, format_table_identifier
 from iceframe.operations import TableOperations
@@ -52,11 +59,37 @@ class IceFrame:
 
         self._operations = TableOperations(self.catalog)
         self._exporter = DataExporter()
+
+    def _repr_html_(self) -> str:
+        """HTML representation for Jupyter Notebooks"""
+        uri = self.catalog_config.get("uri", "unknown")
+        catalog_type = self.catalog_config.get("type", "unknown")
+        warehouse = self.catalog_config.get("warehouse", "unknown")
+        
+        # Get namespaces
+        try:
+            namespaces = self.list_namespaces()
+            ns_list = "<ul>" + "".join([f"<li>{ns[0]}</li>" for ns in namespaces]) + "</ul>"
+        except Exception:
+            ns_list = "Could not list namespaces"
+            
+        return f"""
+        <div style="border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px;">
+            <h3>IceFrame Connection</h3>
+            <p><strong>URI:</strong> {uri}</p>
+            <p><strong>Type:</strong> {catalog_type}</p>
+            <p><strong>Warehouse:</strong> {warehouse}</p>
+            <hr>
+            <h4>Namespaces</h4>
+            {ns_list}
+        </div>
+        """
+
     
     def create_table(
         self,
         table_name: str,
-        schema: Union[Schema, pa.Schema, pl.DataFrame, Dict[str, Any]],
+        schema: Union[Schema, pa.Schema, pl.DataFrame, Dict[str, Any], Type[BaseModel]],
         partition_spec: Optional[List[tuple]] = None,
         sort_order: Optional[List[str]] = None,
         properties: Optional[Dict[str, str]] = None,
@@ -84,6 +117,10 @@ class IceFrame:
             ... ])
             >>> table = ice.create_table("my_namespace.my_table", schema)
         """
+        if HAS_PYDANTIC and isinstance(schema, type) and issubclass(schema, BaseModel):
+            from iceframe.pydantic import to_iceberg_schema
+            schema = to_iceberg_schema(schema)
+
         return self._operations.create_table(
             table_name=table_name,
             schema=schema,
@@ -147,6 +184,26 @@ class IceFrame:
             >>> ice.append_to_table("my_table", df)
         """
         self._operations.append_to_table(table_name, data, branch=branch)
+
+    def insert_items(self, table_name: str, items: List[BaseModel], branch: Optional[str] = None) -> None:
+        """
+        Insert a list of Pydantic models into a table.
+        
+        Args:
+            table_name: Name of the table
+            items: List of Pydantic model instances
+            branch: Optional branch name
+        """
+        if not items:
+            return
+            
+        # Convert items to dicts
+        data = [item.model_dump() for item in items]
+        
+        # Create DataFrame
+        df = pl.DataFrame(data)
+        
+        self.append_to_table(table_name, df, branch=branch)
     
     def overwrite_table(
         self,
