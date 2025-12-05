@@ -153,3 +153,68 @@ def read_hudi(path: str, **kwargs) -> pl.DataFrame:
         return pl.from_arrow(df.to_arrow())
     except ImportError:
         raise ImportError("getdaft is required. Install with 'pip install iceframe[hudi]'")
+
+def read_csv(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a CSV file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the CSV file
+        **kwargs: Additional arguments passed to pl.read_csv
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_csv(path, **kwargs)
+
+def read_json(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a JSON file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the JSON file
+        **kwargs: Additional arguments passed to pl.read_json
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_json(path, **kwargs)
+
+def read_parquet(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a Parquet file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the Parquet file
+        **kwargs: Additional arguments passed to pl.read_parquet
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_parquet(path, **kwargs)
+
+def read_ipc(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read an IPC (Arrow) file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the IPC file
+        **kwargs: Additional arguments passed to pl.read_ipc
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_ipc(path, **kwargs)
+
+def read_avro(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read an Avro file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the Avro file
+        **kwargs: Additional arguments passed to pl.read_avro
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_avro(path, **kwargs)

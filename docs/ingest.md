@@ -97,6 +97,56 @@ ice.create_table_from_hudi(
 )
 ```
 
+### Standard File Formats
+
+IceFrame also supports standard file formats natively supported by Polars.
+
+#### CSV
+
+```python
+ice.create_table_from_csv(
+    "my_namespace.from_csv",
+    "path/to/data.csv",
+    has_header=True
+)
+```
+
+#### JSON
+
+```python
+ice.create_table_from_json(
+    "my_namespace.from_json",
+    "path/to/data.json"
+)
+```
+
+#### Parquet
+
+```python
+ice.create_table_from_parquet(
+    "my_namespace.from_parquet",
+    "path/to/data.parquet"
+)
+```
+
+#### IPC / Arrow
+
+```python
+ice.create_table_from_ipc(
+    "my_namespace.from_ipc",
+    "path/to/data.arrow"
+)
+```
+
+#### Avro
+
+```python
+ice.create_table_from_avro(
+    "my_namespace.from_avro",
+    "path/to/data.avro"
+)
+```
+
 ## How it Works
 
 These methods perform the following steps:

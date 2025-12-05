@@ -12,7 +12,8 @@ sys.modules["gspread"] = MagicMock()
 sys.modules["daft"] = MagicMock()
 
 from iceframe.ingest import (
-    read_delta, read_lance, read_vortex, read_excel, read_gsheets, read_hudi
+    read_delta, read_lance, read_vortex, read_excel, read_gsheets, read_hudi,
+    read_csv, read_json, read_parquet, read_ipc, read_avro
 )
 from iceframe.core import IceFrame
 
@@ -76,6 +77,41 @@ class TestIngest(unittest.TestCase):
                 df = read_hudi("path/to/hudi")
                 mock_read.assert_called_with("path/to/hudi")
                 self.assertIsInstance(df, pl.DataFrame)
+
+    @patch("polars.read_csv")
+    def test_read_csv(self, mock_read):
+        mock_read.return_value = pl.DataFrame({"a": [1]})
+        df = read_csv("path/to/csv")
+        mock_read.assert_called_with("path/to/csv")
+        self.assertIsInstance(df, pl.DataFrame)
+
+    @patch("polars.read_json")
+    def test_read_json(self, mock_read):
+        mock_read.return_value = pl.DataFrame({"a": [1]})
+        df = read_json("path/to/json")
+        mock_read.assert_called_with("path/to/json")
+        self.assertIsInstance(df, pl.DataFrame)
+
+    @patch("polars.read_parquet")
+    def test_read_parquet(self, mock_read):
+        mock_read.return_value = pl.DataFrame({"a": [1]})
+        df = read_parquet("path/to/parquet")
+        mock_read.assert_called_with("path/to/parquet")
+        self.assertIsInstance(df, pl.DataFrame)
+
+    @patch("polars.read_ipc")
+    def test_read_ipc(self, mock_read):
+        mock_read.return_value = pl.DataFrame({"a": [1]})
+        df = read_ipc("path/to/ipc")
+        mock_read.assert_called_with("path/to/ipc")
+        self.assertIsInstance(df, pl.DataFrame)
+
+    @patch("polars.read_avro")
+    def test_read_avro(self, mock_read):
+        mock_read.return_value = pl.DataFrame({"a": [1]})
+        df = read_avro("path/to/avro")
+        mock_read.assert_called_with("path/to/avro")
+        self.assertIsInstance(df, pl.DataFrame)
 
 class TestIceFrameIngest(unittest.TestCase):
     

@@ -274,6 +274,121 @@ class IceFrame:
         table = self.create_table(table_name, schema=df)
         self.append_to_table(table_name, df)
         return table
+
+    def create_table_from_csv(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a CSV file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to CSV file
+            **kwargs: Additional arguments for read_csv
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_csv
+        df = read_csv(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_json(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a JSON file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to JSON file
+            **kwargs: Additional arguments for read_json
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_json
+        df = read_json(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_parquet(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Parquet file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Parquet file
+            **kwargs: Additional arguments for read_parquet
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_parquet
+        df = read_parquet(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_ipc(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an IPC/Arrow file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to IPC file
+            **kwargs: Additional arguments for read_ipc
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_ipc
+        df = read_ipc(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_avro(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an Avro file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Avro file
+            **kwargs: Additional arguments for read_avro
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_avro
+        df = read_avro(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
     
     def read_table(
         self,
