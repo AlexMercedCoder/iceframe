@@ -34,6 +34,23 @@ Install with:
 pip install "iceframe[pydantic]"
 ```
 
+### Ingestion (`[ingestion]`)
+
+Required for various data ingestion and format support.
+
+- `pdf`: PDF generation (`fpdf2`, `markdown-it-py`)
+- `delta`: Delta Lake support (`deltalake`)
+- `lance`: Lance support (`pylance`)
+- `vortex`: Vortex support (`vortex-data`)
+- `excel`: Excel support (`fastexcel`)
+- `gsheets`: Google Sheets support (`gspread`)
+- `hudi`: Hudi support (`getdaft`)
+
+Install with:
+```bash
+pip install "iceframe[ingestion]"
+```
+
 ### Notebook (`[notebook]`)
 
 Required for Jupyter Notebook integration.

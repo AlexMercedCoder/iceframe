@@ -39,12 +39,13 @@ Modular components for specific capabilities:
 - **Evolution** (`iceframe.evolution`): Partition spec evolution.
 - **Procedures** (`iceframe.procedures`): Stored procedure interface.
 - **Rollback** (`iceframe.rollback`): Snapshot rollback and management.
-- **Ingestion** (`iceframe.ingestion`): Bulk file ingestion.
 - **Catalog Ops** (`iceframe.catalog_ops`): Catalog-level operations.
 - **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
 - **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
 - **Pydantic Integration** (`iceframe.pydantic`): Schema conversion and data validation.
-- **Notebook Magics** (`iceframe.magics`): IPython magic commands (`%iceframe`, `%%iceql`).
+- **Notebook Magics** (`iceframe/magics.py`): IPython magic commands (`%iceframe`, `%%iceql`).
+- **Bulk Ingestion** (`iceframe/ingestion.py`): Add existing files to tables.
+- **Format Ingestion** (`iceframe/ingest.py`): Read Delta, Lance, Vortex, Excel, etc.
 
 ### 5. Scalability Features
 - **Query Caching** (`iceframe.cache`): In-memory and disk-based result caching

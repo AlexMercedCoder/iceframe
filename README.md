@@ -130,6 +130,7 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 - [AI Agent](docs/ai_agent.md)
 - [Pydantic Integration](docs/pydantic.md)
 - [Notebook Integration](docs/notebooks.md)
+- [Data Ingestion](docs/ingest.md)
 
 ### Scalability
 - [Scalability Overview](docs/scalability.md)

@@ -129,6 +129,152 @@ class IceFrame:
             properties=properties,
         )
     
+    def create_table_from_delta(
+        self,
+        table_name: str,
+        path: str,
+        version: Optional[int] = None,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Delta Lake table.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Delta table
+            version: Optional Delta table version
+            **kwargs: Additional arguments for read_delta
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_delta
+        df = read_delta(path, version=version, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_lance(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Lance dataset.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Lance dataset
+            **kwargs: Additional arguments for read_lance
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_lance
+        df = read_lance(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_vortex(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Vortex file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Vortex file
+            **kwargs: Additional arguments for read_vortex
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_vortex
+        df = read_vortex(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_excel(
+        self,
+        table_name: str,
+        path: str,
+        sheet_name: str = "Sheet1",
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an Excel file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Excel file
+            sheet_name: Name of the sheet to read
+            **kwargs: Additional arguments for read_excel
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_excel
+        df = read_excel(path, sheet_name=sheet_name, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_gsheets(
+        self,
+        table_name: str,
+        url: str,
+        credentials: Any = None,
+        sheet_name: Optional[str] = None,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Google Sheet.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            url: URL of the Google Sheet
+            credentials: Path to service account JSON or credentials object
+            sheet_name: Optional worksheet name
+            **kwargs: Additional arguments for read_gsheets
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_gsheets
+        df = read_gsheets(url, credentials=credentials, sheet_name=sheet_name, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_hudi(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Hudi table.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Hudi table
+            **kwargs: Additional arguments for read_hudi
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_hudi
+        df = read_hudi(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+    
     def read_table(
         self,
         table_name: str,
