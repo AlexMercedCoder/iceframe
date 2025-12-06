@@ -125,5 +125,54 @@ def head(table_name: str, n: int = typer.Option(5, help="Number of rows to show"
     except Exception as e:
         console.print(f"[red]Error reading table: {e}[/red]")
 
+# MCP Command Group
+mcp_app = typer.Typer(help="Manage MCP Server")
+app.add_typer(mcp_app, name="mcp")
+
+@mcp_app.command("start")
+def start_mcp():
+    """Start the MCP server over stdio."""
+    try:
+        from iceframe.mcp_server import start
+        start()
+    except ImportError:
+        console.print("[red]MCP dependencies not installed. Run: pip install 'iceframe[mcp]'[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error starting MCP server: {e}[/red]")
+        raise typer.Exit(code=1)
+
+@mcp_app.command("config")
+def config_mcp():
+    """Print MCP configuration for clients."""
+    import sys
+    import json
+    
+    # Get python executable path
+    python_path = sys.executable
+    
+    config = {
+        "mcpServers": {
+            "iceframe": {
+                "command": python_path,
+                "args": ["-m", "iceframe.cli", "mcp", "start"],
+                "env": {
+                    "ICEBERG_CATALOG_URI": os.getenv("ICEBERG_CATALOG_URI", ""),
+                    "ICEBERG_CATALOG_TYPE": os.getenv("ICEBERG_CATALOG_TYPE", "rest"),
+                    "ICEBERG_WAREHOUSE": os.getenv("ICEBERG_WAREHOUSE", ""),
+                    "ICEBERG_TOKEN": os.getenv("ICEBERG_TOKEN", ""),
+                    "ICEBERG_CREDENTIAL": os.getenv("ICEBERG_CREDENTIAL", ""),
+                    "ICEBERG_OAUTH2_SERVER_URI": os.getenv("ICEBERG_OAUTH2_SERVER_URI", "")
+                }
+            }
+        }
+    }
+    
+    # Filter out empty env vars
+    env = config["mcpServers"]["iceframe"]["env"]
+    config["mcpServers"]["iceframe"]["env"] = {k: v for k, v in env.items() if v}
+    
+    print(json.dumps(config, indent=2))
+
 if __name__ == "__main__":
     app()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iceframe"
-version = "0.4.0"
+version = "0.5.0"
 description = "A DataFrame-like library for working with Apache Iceberg tables"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -66,6 +66,7 @@ vortex = ["vortex-data>=0.1.0"] # Assuming vortex-data based on research
 excel = ["fastexcel>=0.9.0"]
 gsheets = ["gspread>=6.0.0"]
 hudi = ["getdaft>=0.2.0"]
+mcp = ["mcp>=0.1.0"]
 ingestion = [
     "iceframe[delta,lance,vortex,excel,gsheets,hudi]",
 ]

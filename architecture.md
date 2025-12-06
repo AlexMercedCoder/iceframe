@@ -40,9 +40,10 @@ Modular components for specific capabilities:
 - **Procedures** (`iceframe.procedures`): Stored procedure interface.
 - **Rollback** (`iceframe.rollback`): Snapshot rollback and management.
 - **Catalog Ops** (`iceframe.catalog_ops`): Catalog-level operations.
-- **Async Operations** (`iceframe.async_ops`): Non-blocking operations.
-- **AI Agent** (`iceframe.agent`): Natural language interface with LLM integration.
-- **Pydantic Integration** (`iceframe.pydantic`): Schema conversion and data validation.
+- **Async Operations** (`iceframe/async_ops.py`): Non-blocking operations.
+- **AI Agent** (`iceframe/agent`): Natural language interface with LLM integration.
+- **MCP Server** (`iceframe/mcp_server.py`): Model Context Protocol server.
+- **Pydantic Integration** (`iceframe/pydantic.py`): Schema conversion and data validation.
 - **Notebook Magics** (`iceframe/magics.py`): IPython magic commands (`%iceframe`, `%%iceql`).
 - **Bulk Ingestion** (`iceframe/ingestion.py`): Add existing files to tables.
 - **Format Ingestion** (`iceframe/ingest.py`): Read Delta, Lance, Vortex, Excel, etc.

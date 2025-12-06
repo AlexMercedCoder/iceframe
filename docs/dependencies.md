@@ -51,6 +51,17 @@ Install with:
 pip install "iceframe[ingestion]"
 ```
 
+### MCP Server (`[mcp]`)
+
+Required for running the Model Context Protocol server.
+
+- `mcp`: MCP server library
+
+Install with:
+```bash
+pip install "iceframe[mcp]"
+```
+
 ### Notebook (`[notebook]`)
 
 Required for Jupyter Notebook integration.

@@ -128,6 +128,7 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 - [Native Maintenance](docs/native_maintenance.md)
 - [Async Operations](docs/async.md)
 - [AI Agent](docs/ai_agent.md)
+- [MCP Server](docs/mcp.md)
 - [Pydantic Integration](docs/pydantic.md)
 - [Notebook Integration](docs/notebooks.md)
 - [Data Ingestion](docs/ingest.md)
