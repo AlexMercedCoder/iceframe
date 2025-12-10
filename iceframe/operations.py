@@ -215,6 +215,44 @@ class TableOperations:
         
         return df
     
+    def scan_batches(
+        self,
+        table_name: str,
+        columns: Optional[List[str]] = None,
+        filter_expr: Optional[str] = None,
+        limit: Optional[int] = None,
+        snapshot_id: Optional[int] = None,
+        as_of_timestamp: Optional[int] = None,
+        batch_size: Optional[int] = None,
+    ):
+        """
+        Scan table and return an iterator of PyArrow RecordBatches.
+        
+        Args:
+            table_name: Name of the table
+            columns: Optional column selection
+            filter_expr: Optional filter expression
+            limit: Optional row limit
+            snapshot_id: Optional snapshot ID
+            as_of_timestamp: Optional timestamp
+            batch_size: Optional batch size hint
+            
+        Returns:
+            Iterator of PyArrow RecordBatches
+        """
+        table = self.get_table(table_name)
+        scan = table.scan(
+            row_filter=filter_expr, # Note: PyIceberg expects Expression object, string might need parsing if supported
+            selected_fields=tuple(columns) if columns else ("*",),
+            limit=limit,
+            snapshot_id=snapshot_id,
+            as_of_timestamp=as_of_timestamp,
+        )
+        
+        # Note: PyIceberg's to_arrow_batch_reader() returns a pa.RecordBatchReader
+        # which is an iterator of RecordBatches
+        return scan.to_arrow_batch_reader()
+    
     def append_to_table(
         self,
         table_name: str,

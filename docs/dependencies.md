@@ -130,13 +130,28 @@ export ANTHROPIC_API_KEY="your-key"
 export GOOGLE_API_KEY="your-key"
 ```
 
-## Scalability Features
+### Scalability Features
 
-```
-- `psutil>=5.9.0` - Memory monitoring
-- `prometheus-client>=0.19.0` - Metrics export
-
-### All Scalability Features
 ```bash
 pip install "iceframe[cache,streaming,monitoring]"
+```
+
+### SQL Support (`[datafusion]`)
+
+Required for high-performance SQL execution.
+
+- `datafusion>=35.0.0`: Apache DataFusion
+
+```bash
+pip install "iceframe[datafusion]"
+```
+
+### Distributed Processing (`[distributed]`)
+
+Required for distributed execution.
+
+- `ray>=2.0.0`: Ray
+
+```bash
+pip install "iceframe[distributed]"
 ```

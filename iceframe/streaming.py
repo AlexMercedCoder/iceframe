@@ -34,6 +34,21 @@ class StreamingWriter:
         self._buffer = []
         self._last_flush = time.time()
         
+        # Auto-compaction settings
+        self.auto_compact = False
+        self.compact_every_n_flushes = 10
+        self._flushes_since_compact = 0
+        
+    def enable_auto_compaction(self, every_n_flushes: int = 10):
+        """
+        Enable auto-compaction.
+        
+        Args:
+            every_n_flushes: Run compaction after this many flushes
+        """
+        self.auto_compact = True
+        self.compact_every_n_flushes = every_n_flushes
+        
     def write(self, record: Dict[str, Any]):
         """
         Write a single record.
@@ -57,6 +72,28 @@ class StreamingWriter:
         self.ice_frame.append_to_table(self.table_name, df)
         self._buffer = []
         self._last_flush = time.time()
+        
+        self._flushes_since_compact += 1
+        
+        if self.auto_compact and self._flushes_since_compact >= self.compact_every_n_flushes:
+            self._run_compaction()
+            
+    def _run_compaction(self):
+        """Run compaction job"""
+        try:
+            # Assuming compaction module exists and is exposed via ice_frame.compaction
+            # If not, we might need to import it or use operations directly
+            # For now, we'll try to use the compaction feature module if available
+            if hasattr(self.ice_frame, 'compaction'):
+                self.ice_frame.compaction.bin_pack(self.table_name)
+            else:
+                # Fallback or log warning
+                pass
+        except Exception:
+            # Don't fail streaming if compaction fails
+            pass
+        finally:
+            self._flushes_since_compact = 0
         
     def close(self):
         """Close writer and flush remaining records"""

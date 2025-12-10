@@ -55,17 +55,14 @@ class MemoryManager:
             chunk_size: Number of rows per chunk
             columns: Optional column selection
             
-        Yields:
-            DataFrame chunks
         """
-        # Read full table first (PyIceberg doesn't support native chunking)
-        df = ice_frame.read_table(table_name, columns=columns)
+        # Use scan_batches for true lazy reading
+        # Note: chunk_size is a hint, actual batch size depends on file layout
+        batch_reader = ice_frame._operations.scan_batches(
+            table_name, 
+            columns=columns
+        )
         
-        # Yield in chunks
-        total_rows = df.height
-        for start in range(0, total_rows, chunk_size):
-            end = min(start + chunk_size, total_rows)
-            chunk = df.slice(start, end - start)
-            
+        for batch in batch_reader:
             self.check_memory_limit()
-            yield chunk
+            yield pl.from_arrow(batch)

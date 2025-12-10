@@ -13,6 +13,59 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - **Maintenance**: Expire snapshots, remove orphan files, compact data files
 - **Export**: Export data to Parquet, CSV, and JSON
 
+## Documentation
+
+### Getting Started
+- [Creating Tables](docs/creating_tables.md)
+- [Reading Tables](docs/reading_tables.md)
+- [Updating Tables](docs/updating_tables.md)
+- [Deleting Tables](docs/deleting_tables.md)
+- [CLI Usage](docs/cli.md)
+- [Dependencies](docs/dependencies.md)
+
+### Data Ingestion
+- [Native File Ingestion](docs/ingest_native.md) (CSV, JSON, Parquet, ORC, Avro)
+- [Optional File Ingestion](docs/ingest_optional.md) (Excel, Delta, Google Sheets)
+- [Advanced File Ingestion](docs/ingest_advanced.md) (SQL, XML, SAS/SPSS)
+- [Bulk Ingestion](docs/ingestion.md)
+- [Incremental Ingestion](docs/recipes/incremental_ingestion.md)
+
+### Querying & Processing
+- [Query Builder API](docs/query_builder.md)
+- [SQL Support (DataFusion)](docs/datafusion.md)
+- [Lazy Reading](docs/lazy_reading.md)
+- [Distributed Processing (Ray)](docs/distributed.md)
+- [Async Operations](docs/async.md)
+- [Notebook Integration](docs/notebooks.md)
+
+### Table Management
+- [Namespace Management](docs/namespaces.md)
+- [Schema Evolution](docs/schema_evolution.md)
+- [Partition Management](docs/partitioning.md)
+- [Branching & Tagging](docs/branching.md)
+- [Views](docs/views.md) (if exists, or remove)
+- [Catalog Operations](docs/catalog_ops.md)
+
+### Maintenance & Quality
+- [Table Maintenance](docs/maintenance.md)
+- [Native Maintenance](docs/native_maintenance.md)
+- [Streaming Auto-Compaction](docs/streaming_compaction.md)
+- [Data Quality](docs/data_quality.md)
+- [Rollback & History](docs/rollback.md)
+
+### Advanced Features
+- [Incremental Processing](docs/incremental.md)
+- [Table Statistics](docs/statistics.md)
+- [Scalability Overview](docs/scalability.md)
+- [AI Agent](docs/ai_agent.md)
+- [MCP Server](docs/mcp.md)
+- [Pydantic Integration](docs/pydantic.md)
+
+### Recipes
+- [ETL Pipeline](docs/recipes/etl_pipeline.md)
+- [SCD Type 2](docs/recipes/scd_type_2.md)
+- [Data Quality Gate](docs/recipes/data_quality_gate.md)
+
 ## Installation
 
 ```bash
@@ -97,50 +150,3 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 | **Ingestion** | `add_files` | `add_files` wrapper + Incremental Ingestion recipes |
 | **Rollback** | `manage_snapshots` | `rollback_to_snapshot`, `rollback_to_timestamp` |
 | **Async** | None | `AsyncIceFrame` for non-blocking I/O |
-
-## Documentation
-
-- [Architecture](architecture.md)
-- [Creating Tables](docs/creating_tables.md)
-- [Reading Tables](docs/reading_tables.md)
-- [Updating Tables](docs/updating_tables.md)
-- [Deleting Tables](docs/deleting_tables.md)
-- [Query Builder API](docs/query_builder.md)
-- [Namespace Management](docs/namespaces.md)
-- [Schema Evolution](docs/schema_evolution.md)
-- [Partition Management](docs/partitioning.md)
-- [Data Quality](docs/data_quality.md)
-- [Table Maintenance](docs/maintenance.md)
-- [Exporting Data](docs/export.md)
-- [CLI Usage](docs/cli.md)
-- [Dependencies](docs/dependencies.md)
-
-### Advanced Features
-- [Incremental Processing](docs/incremental.md)
-- [Table Statistics](docs/statistics.md)
-- [Scalability Features](docs/scalability.md)
-- [Advanced Iceberg Features](docs/advanced_features.md)
-- [JOIN Support](docs/joins.md)
-- [Branching & Tagging](docs/branching.md)
-- [Rollback & History](docs/rollback.md)
-- [Bulk Ingestion](docs/ingestion.md)
-- [Catalog Operations](docs/catalog_ops.md)
-- [Native Maintenance](docs/native_maintenance.md)
-- [Async Operations](docs/async.md)
-- [AI Agent](docs/ai_agent.md)
-- [MCP Server](docs/mcp.md)
-- [Pydantic Integration](docs/pydantic.md)
-- [Notebook Integration](docs/notebooks.md)
-- [Data Ingestion](docs/ingest.md)
-- [Native File Ingestion](docs/ingest_native.md)
-- [Optional File Ingestion](docs/ingest_optional.md)
-- [Advanced File Ingestion](docs/ingest_advanced.md)
-
-### Scalability
-- [Scalability Overview](docs/scalability.md)
-
-### Recipes & Patterns
-- [ETL Pipeline](docs/recipes/etl_pipeline.md) - Simple Extract-Transform-Load workflow
-- [SCD Type 2](docs/recipes/scd_type_2.md) - Handling slowly changing dimensions
-- [Incremental Ingestion](docs/recipes/incremental_ingestion.md) - Processing only new data
-- [Data Quality Gate](docs/recipes/data_quality_gate.md) - Write-Audit-Publish pattern

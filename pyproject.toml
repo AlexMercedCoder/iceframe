@@ -107,6 +107,12 @@ xml = [
 stats = [
     "pyreadstat>=1.2.0",
 ]
+datafusion = [
+    "datafusion>=35.0.0",
+]
+distributed = [
+    "ray>=2.0.0",
+]
 
 [project.scripts]
 iceframe = "iceframe.cli:app"

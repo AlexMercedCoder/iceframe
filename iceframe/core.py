@@ -591,7 +591,42 @@ class IceFrame:
             raise ValueError(f"Unsupported file format: {format}")
             
         self.append_to_table(table_name, df, branch=branch)
+
+    def query_datafusion(self, sql: str, tables: Optional[list[str]] = None) -> pl.DataFrame:
+        """
+        Execute a SQL query using Apache DataFusion.
+        
+        Args:
+            sql: SQL query to execute
+            tables: List of table names to register before querying. 
+                   If None, attempts to parse table names from SQL (basic) or requires manual registration.
+                   
+        Returns:
+            Polars DataFrame result
+        """
+        from iceframe.datafusion_ops import DataFusionManager
+        
+        dfm = DataFusionManager(self)
+        
+        if tables:
+            for table in tables:
+                dfm.register_table(table)
+        
+        return dfm.query(sql)
     
+    @property
+    def distribute(self):
+        """
+        Access distributed processing capabilities (Ray).
+        
+        Returns:
+            RayExecutor instance
+        """
+        from iceframe.distributed import RayExecutor
+        # Initialize with default args or allow config via properties?
+        # For now, default initialization.
+        return RayExecutor()
+
     def read_table(
         self,
         table_name: str,

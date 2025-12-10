@@ -51,11 +51,13 @@ Modular components for specific capabilities:
 ### 5. Scalability Features
 - **Query Caching** (`iceframe.cache`): In-memory and disk-based result caching
 - **Parallel Operations** (`iceframe.parallel`): Concurrent table operations
+- **Distributed Processing** (`iceframe.distributed`): Ray-based distributed execution
+- **SQL Execution** (`iceframe.datafusion_ops`): Apache DataFusion integration
 - **Connection Pooling** (`iceframe.pool`): Catalog connection pooling
-- **Memory Management** (`iceframe.memory`): Chunked reading and memory limits
+- **Memory Management** (`iceframe.memory`): Lazy reading and memory limits
 - **Query Optimization** (`iceframe.optimizer`): Automatic query optimization
 - **Monitoring** (`iceframe.monitoring`): Query metrics and observability
-- **Streaming** (`iceframe.streaming`): Micro-batch and Kafka streaming
+- **Streaming** (`iceframe.streaming`): Micro-batch, Kafka streaming, and Auto-Compaction
 - **Data Skipping** (`iceframe.skipping`): File-level filtering
 - **Federation** (`iceframe.federation`): Multi-catalog support
 
