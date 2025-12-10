@@ -48,6 +48,10 @@ Required for various data ingestion and format support.
 - `sql`: SQL Database support (`connectorx`, `sqlalchemy`)
 - `xml`: XML support (`lxml`)
 - `stats`: Statistical file support (`pyreadstat`)
+- `api`: REST API support (`requests`)
+- `hf`: HuggingFace Datasets support (`datasets`)
+- `html`: HTML table scraping (`lxml`, `html5lib`, `beautifulsoup4`)
+- `clipboard`: Clipboard support (`pyperclip`)
 
 Install with:
 ```bash
@@ -59,6 +63,10 @@ Or individually:
 pip install "iceframe[sql]"
 pip install "iceframe[xml]"
 pip install "iceframe[stats]"
+pip install "iceframe[api]"
+pip install "iceframe[hf]"
+pip install "iceframe[html]"
+pip install "iceframe[clipboard]"
 ```
 
 ### MCP Server (`[mcp]`)

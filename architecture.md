@@ -48,7 +48,7 @@ Modular components for specific capabilities:
 - **Pydantic Integration** (`iceframe/pydantic.py`): Schema conversion and data validation.
 - **Notebook Magics** (`iceframe/magics.py`): IPython magic commands (`%iceframe`, `%%iceql`).
 - **Bulk Ingestion** (`iceframe/ingestion.py`): Add existing files to tables.
-- **Format Ingestion** (`iceframe/ingest.py`): Read CSV, JSON, Parquet, Avro, ORC, Delta, Lance, Excel, Google Sheets, Hudi, SQL, XML, SAS, SPSS, Stata.
+- **Format Ingestion** (`iceframe/ingest.py`): Read CSV, JSON, Parquet, Avro, ORC, Delta, Lance, Excel, Google Sheets, Hudi, SQL, XML, SAS, SPSS, Stata, API, HuggingFace, HTML, Clipboard.
 
 ### 5. Scalability Features
 - **Query Caching** (`iceframe.cache`): In-memory and disk-based result caching

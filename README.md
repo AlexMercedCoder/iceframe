@@ -22,11 +22,17 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - [Deleting Tables](docs/deleting_tables.md)
 - [CLI Usage](docs/cli.md)
 - [Dependencies](docs/dependencies.md)
+- [Environment Variables](docs/variables.md)
 
 ### Data Ingestion
 - [Native File Ingestion](docs/ingest_native.md) (CSV, JSON, Parquet, ORC, Avro)
 - [Optional File Ingestion](docs/ingest_optional.md) (Excel, Delta, Google Sheets)
 - [Advanced File Ingestion](docs/ingest_advanced.md) (SQL, XML, SAS/SPSS)
+- [API Ingestion](docs/ingest_api.md)
+- [HuggingFace Ingestion](docs/ingest_huggingface.md)
+- [HTML Ingestion](docs/ingest_html.md)
+- [Clipboard Ingestion](docs/ingest_clipboard.md)
+- [Folder Ingestion](docs/ingest_folder.md)
 - [Bulk Ingestion](docs/ingestion.md)
 - [Incremental Ingestion](docs/recipes/incremental_ingestion.md)
 

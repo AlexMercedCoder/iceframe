@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iceframe"
-version = "0.7.0"
+version = "0.8.0"
 description = "A DataFrame-like library for working with Apache Iceberg tables"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -45,7 +45,23 @@ azure = [
     "adlfs>=2023.1.0",
 ]
 all = [
-    "iceframe[aws,gcs,azure,cli]",
+    "iceframe[aws]",
+    "iceframe[gcs]",
+    "iceframe[azure]",
+    "iceframe[delta]",
+    "iceframe[lance]",
+    "iceframe[vortex]",
+    "iceframe[excel]",
+    "iceframe[gsheets]",
+    "iceframe[hudi]",
+    "iceframe[sql]",
+    "iceframe[xml]",
+    "iceframe[stats]",
+    "iceframe[api]",
+    "iceframe[hf]",
+    "iceframe[html]",
+    "iceframe[clipboard]",
+    "python-dotenv>=1.0.0",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -104,9 +120,11 @@ sql = [
 xml = [
     "lxml>=4.9.0",
 ]
-stats = [
-    "pyreadstat>=1.2.0",
-]
+stats = ["pyreadstat"]
+api = ["requests"]
+hf = ["datasets"]
+html = ["lxml", "html5lib", "beautifulsoup4"]
+clipboard = ["pyperclip"]
 datafusion = [
     "datafusion>=35.0.0",
 ]

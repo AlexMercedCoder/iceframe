@@ -321,3 +321,141 @@ def read_stata(path: str, **kwargs) -> pl.DataFrame:
         return pl.from_pandas(df_pd)
     except ImportError:
         raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'")
+
+def read_api(url: str, json_key: Optional[str] = None, **kwargs) -> pl.DataFrame:
+    """
+    Read data from a REST API into a Polars DataFrame.
+    
+    Args:
+        url: URL to fetch data from
+        json_key: Optional key to extract list of records from JSON response
+        **kwargs: Additional arguments passed to requests.get
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import requests
+        response = requests.get(url, **kwargs)
+        response.raise_for_status()
+        data = response.json()
+        
+        if json_key:
+            if isinstance(data, dict) and json_key in data:
+                data = data[json_key]
+            else:
+                raise ValueError(f"Key '{json_key}' not found in response")
+                
+        # Handle if data is a single dict instead of list
+        if isinstance(data, dict):
+            data = [data]
+            
+        return pl.DataFrame(data)
+    except ImportError:
+        raise ImportError("requests is required. Install with 'pip install iceframe[api]'")
+
+def read_huggingface(dataset_name: str, split: str = "train", **kwargs) -> pl.DataFrame:
+    """
+    Read a HuggingFace dataset into a Polars DataFrame.
+    
+    Args:
+        dataset_name: Name of the dataset (e.g. 'lhoestq/test')
+        split: Split to read (default: 'train')
+        **kwargs: Additional arguments passed to load_dataset
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        from datasets import load_dataset
+        ds = load_dataset(dataset_name, split=split, **kwargs)
+        # Convert to Arrow then Polars
+        return pl.from_arrow(ds.data.table)
+    except ImportError:
+        raise ImportError("datasets is required. Install with 'pip install iceframe[hf]'")
+
+def read_html(url: str, match: Optional[str] = None, **kwargs) -> pl.DataFrame:
+    """
+    Read HTML tables into a Polars DataFrame.
+    
+    Args:
+        url: URL or HTML string
+        match: Optional regex or string to match specific table
+        **kwargs: Additional arguments passed to pandas.read_html
+        
+    Returns:
+        Polars DataFrame (concatenated if multiple tables found, or first one)
+    """
+    try:
+        import pandas as pd
+        # pandas.read_html returns a list of DataFrames
+        dfs = pd.read_html(url, match=match, **kwargs)
+        
+        if not dfs:
+            raise ValueError("No tables found in HTML")
+            
+        # If multiple tables, we could return a list, but IceFrame expects a single DF
+        # For now, let's return the first one or concat?
+        # Let's return the first one as it's the most common use case
+        # Or maybe concat if they have same schema?
+        # Let's stick to first one for simplicity, user can use match to be specific
+        return pl.from_pandas(dfs[0])
+    except ImportError:
+        raise ImportError("lxml, html5lib, and beautifulsoup4 are required. Install with 'pip install iceframe[html]'")
+
+def read_clipboard(**kwargs) -> pl.DataFrame:
+    """
+    Read data from the system clipboard into a Polars DataFrame.
+    
+    Args:
+        **kwargs: Additional arguments passed to pandas.read_clipboard
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import pandas as pd
+        df_pd = pd.read_clipboard(**kwargs)
+        return pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("pyperclip is required. Install with 'pip install iceframe[clipboard]'")
+
+def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
+    """
+    Read all files in a folder matching a pattern into a single Polars DataFrame.
+    
+    Args:
+        path: Path to the folder
+        pattern: Glob pattern to match files (default: '*')
+        **kwargs: Additional arguments passed to the specific read function
+        
+    Returns:
+        Polars DataFrame
+    """
+    import glob
+    import os
+    
+    files = glob.glob(os.path.join(path, pattern))
+    if not files:
+        raise ValueError(f"No files found in {path} matching {pattern}")
+        
+    dfs = []
+    for file_path in files:
+        # Infer format from extension
+        _, ext = os.path.splitext(file_path)
+        fmt = ext.lower().lstrip('.')
+        
+        if fmt == 'csv':
+            dfs.append(read_csv(file_path, **kwargs))
+        elif fmt == 'json':
+            dfs.append(read_json(file_path, **kwargs))
+        elif fmt == 'parquet':
+            dfs.append(read_parquet(file_path, **kwargs))
+        elif fmt in ['xls', 'xlsx']:
+            dfs.append(read_excel(file_path, **kwargs))
+        # Add more as needed
+        
+    if not dfs:
+        raise ValueError("No supported files found")
+        
+    return pl.concat(dfs)

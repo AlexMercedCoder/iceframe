@@ -532,6 +532,127 @@ class IceFrame:
         self.append_to_table(table_name, df)
         return table
 
+    def create_table_from_api(
+        self,
+        table_name: str,
+        url: str,
+        json_key: Optional[str] = None,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a REST API.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            url: URL to fetch data from
+            json_key: Optional key to extract list of records
+            **kwargs: Additional arguments for read_api
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_api
+        df = read_api(url, json_key=json_key, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_huggingface(
+        self,
+        table_name: str,
+        dataset_name: str,
+        split: str = "train",
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a HuggingFace dataset.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            dataset_name: Name of the dataset
+            split: Split to read
+            **kwargs: Additional arguments for read_huggingface
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_huggingface
+        df = read_huggingface(dataset_name, split=split, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_html(
+        self,
+        table_name: str,
+        url: str,
+        match: Optional[str] = None,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an HTML table.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            url: URL or HTML string
+            match: Optional regex to match table
+            **kwargs: Additional arguments for read_html
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_html
+        df = read_html(url, match=match, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_clipboard(
+        self,
+        table_name: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from the clipboard.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            **kwargs: Additional arguments for read_clipboard
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_clipboard
+        df = read_clipboard(**kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_folder(
+        self,
+        table_name: str,
+        path: str,
+        pattern: str = "*",
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from files in a folder.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to folder
+            pattern: Glob pattern
+            **kwargs: Additional arguments for read_folder
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_folder
+        df = read_folder(path, pattern=pattern, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
     def insert_from_file(
         self,
         table_name: str,
