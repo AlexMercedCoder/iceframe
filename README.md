@@ -51,9 +51,11 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - [Native Maintenance](docs/native_maintenance.md)
 - [Streaming Auto-Compaction](docs/streaming_compaction.md)
 - [Data Quality](docs/data_quality.md)
+- [Enhanced Data Quality](docs/data_quality_enhanced.md)
 - [Rollback & History](docs/rollback.md)
 
 ### Advanced Features
+- [Visualization](docs/visualization.md)
 - [Incremental Processing](docs/incremental.md)
 - [Table Statistics](docs/statistics.md)
 - [Scalability Overview](docs/scalability.md)

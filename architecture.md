@@ -28,7 +28,9 @@ Modular components for specific capabilities:
 - **Namespace Management** (`iceframe.namespace`): Manage schemas/databases.
 - **Schema Evolution** (`iceframe.schema`): Add/drop/rename/update columns.
 - **Partition Management** (`iceframe.partition`): Manage partition specs.
-- **Data Quality** (`iceframe.quality`): Validate data before/after writes.
+- **Data Quality** (`iceframe.quality`): Data validation and constraints
+- **Visualization** (`iceframe.visualization`): Altair-based plotting
+- **Table Maintenance** (`iceframe.maintenance`): Snapshot expiration, orphan file removal
 - **Garbage Collection** (`iceframe.gc`): Snapshot expiration, native orphan file removal.
 - **Compaction** (`iceframe.compaction`): Bin-packing and sorting strategies.
 - **Export** (`iceframe.export`): Export data to Parquet, CSV, JSON.

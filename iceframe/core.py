@@ -627,6 +627,28 @@ class IceFrame:
         # For now, default initialization.
         return RayExecutor()
 
+    @property
+    def viz(self):
+        """
+        Access visualization capabilities.
+        
+        Returns:
+            Visualizer instance
+        """
+        from iceframe.visualization import Visualizer
+        return Visualizer(self)
+
+    @property
+    def quality(self):
+        """
+        Access data quality validator.
+        
+        Returns:
+            DataValidator instance
+        """
+        from iceframe.quality import DataValidator
+        return DataValidator(self)
+
     def read_table(
         self,
         table_name: str,

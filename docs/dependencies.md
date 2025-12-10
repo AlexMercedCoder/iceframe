@@ -155,3 +155,13 @@ Required for distributed execution.
 ```bash
 pip install "iceframe[distributed]"
 ```
+
+### Visualization (`[viz]`)
+
+Required for generating charts.
+
+- `altair>=5.0.0`: Declarative statistical visualization
+
+```bash
+pip install "iceframe[viz]"
+```

@@ -241,13 +241,19 @@ class TableOperations:
             Iterator of PyArrow RecordBatches
         """
         table = self.get_table(table_name)
-        scan = table.scan(
-            row_filter=filter_expr, # Note: PyIceberg expects Expression object, string might need parsing if supported
-            selected_fields=tuple(columns) if columns else ("*",),
-            limit=limit,
-            snapshot_id=snapshot_id,
-            as_of_timestamp=as_of_timestamp,
-        )
+        from pyiceberg.expressions import AlwaysTrue
+        
+        # Build scan arguments, filtering out None values to avoid issues with some PyIceberg versions
+        scan_args = {
+            "row_filter": filter_expr if filter_expr is not None else AlwaysTrue(),
+            "selected_fields": tuple(columns) if columns else ("*",),
+            "limit": limit,
+            "snapshot_id": snapshot_id,
+        }
+        if as_of_timestamp is not None:
+            scan_args["as_of_timestamp"] = as_of_timestamp
+            
+        scan = table.scan(**scan_args)
         
         # Note: PyIceberg's to_arrow_batch_reader() returns a pa.RecordBatchReader
         # which is an iterator of RecordBatches

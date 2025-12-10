@@ -113,6 +113,9 @@ datafusion = [
 distributed = [
     "ray>=2.0.0",
 ]
+viz = [
+    "altair>=5.0.0",
+]
 
 [project.scripts]
 iceframe = "iceframe.cli:app"
