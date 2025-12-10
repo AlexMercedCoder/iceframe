@@ -45,10 +45,20 @@ Required for various data ingestion and format support.
 - `excel`: Excel support (`fastexcel`)
 - `gsheets`: Google Sheets support (`gspread`)
 - `hudi`: Hudi support (`getdaft`)
+- `sql`: SQL Database support (`connectorx`, `sqlalchemy`)
+- `xml`: XML support (`lxml`)
+- `stats`: Statistical file support (`pyreadstat`)
 
 Install with:
 ```bash
 pip install "iceframe[ingestion]"
+```
+
+Or individually:
+```bash
+pip install "iceframe[sql]"
+pip install "iceframe[xml]"
+pip install "iceframe[stats]"
 ```
 
 ### MCP Server (`[mcp]`)

@@ -218,3 +218,106 @@ def read_avro(path: str, **kwargs) -> pl.DataFrame:
         Polars DataFrame
     """
     return pl.read_avro(path, **kwargs)
+
+def read_orc(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read an ORC file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the ORC file
+        **kwargs: Additional arguments passed to pl.read_orc
+        
+    Returns:
+        Polars DataFrame
+    """
+    return pl.read_orc(path, **kwargs)
+
+def read_sql(query: str, connection_uri: str, **kwargs) -> pl.DataFrame:
+    """
+    Read from a SQL database into a Polars DataFrame.
+    
+    Args:
+        query: SQL query to execute
+        connection_uri: Database connection URI
+        **kwargs: Additional arguments passed to pl.read_database_uri
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        return pl.read_database_uri(query, connection_uri, **kwargs)
+    except ImportError:
+        raise ImportError("connectorx or sqlalchemy is required. Install with 'pip install iceframe[sql]'")
+
+def read_xml(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read an XML file into a Polars DataFrame.
+    
+    Args:
+        path: Path to the XML file
+        **kwargs: Additional arguments passed to pandas.read_xml
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import pandas as pd
+        # Polars doesn't have native read_xml yet, use pandas
+        df_pd = pd.read_xml(path, **kwargs)
+        return pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("lxml is required. Install with 'pip install iceframe[xml]'")
+
+def read_sas(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a SAS file (.sas7bdat) into a Polars DataFrame.
+    
+    Args:
+        path: Path to the SAS file
+        **kwargs: Additional arguments passed to pandas.read_sas
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import pandas as pd
+        df_pd = pd.read_sas(path, format='sas7bdat', **kwargs)
+        return pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'")
+
+def read_spss(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read an SPSS file (.sav) into a Polars DataFrame.
+    
+    Args:
+        path: Path to the SPSS file
+        **kwargs: Additional arguments passed to pandas.read_spss
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import pandas as pd
+        df_pd = pd.read_spss(path, **kwargs)
+        return pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'")
+
+def read_stata(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a Stata file (.dta) into a Polars DataFrame.
+    
+    Args:
+        path: Path to the Stata file
+        **kwargs: Additional arguments passed to pandas.read_stata
+        
+    Returns:
+        Polars DataFrame
+    """
+    try:
+        import pandas as pd
+        df_pd = pd.read_stata(path, **kwargs)
+        return pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'")

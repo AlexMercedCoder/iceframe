@@ -390,6 +390,208 @@ class IceFrame:
         self.append_to_table(table_name, df)
         return table
     
+    def create_table_from_orc(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an ORC file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to ORC file
+            **kwargs: Additional arguments for read_orc
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_orc
+        df = read_orc(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+        return table
+
+    def create_table_from_sql(
+        self,
+        table_name: str,
+        query: str,
+        connection_uri: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a SQL query.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            query: SQL query
+            connection_uri: Database connection URI
+            **kwargs: Additional arguments for read_sql
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_sql
+        df = read_sql(query, connection_uri, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_xml(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an XML file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to XML file
+            **kwargs: Additional arguments for read_xml
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_xml
+        df = read_xml(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_sas(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a SAS file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to SAS file
+            **kwargs: Additional arguments for read_sas
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_sas
+        df = read_sas(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_spss(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from an SPSS file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to SPSS file
+            **kwargs: Additional arguments for read_spss
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_spss
+        df = read_spss(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def create_table_from_stata(
+        self,
+        table_name: str,
+        path: str,
+        **kwargs
+    ) -> Table:
+        """
+        Create an Iceberg table from a Stata file.
+        
+        Args:
+            table_name: Name of the new Iceberg table
+            path: Path to Stata file
+            **kwargs: Additional arguments for read_stata
+            
+        Returns:
+            Created Iceberg Table
+        """
+        from iceframe.ingest import read_stata
+        df = read_stata(path, **kwargs)
+        table = self.create_table(table_name, schema=df)
+        self.append_to_table(table_name, df)
+        return table
+
+    def insert_from_file(
+        self,
+        table_name: str,
+        path: str,
+        format: Optional[str] = None,
+        branch: Optional[str] = None,
+        **kwargs
+    ) -> None:
+        """
+        Insert data from a file into an existing table.
+        
+        Args:
+            table_name: Name of the table
+            path: Path to the file
+            format: Optional format (csv, json, parquet, etc.). If None, inferred from extension.
+            branch: Optional branch name
+            **kwargs: Additional arguments for the specific read function
+        """
+        import os
+        from iceframe import ingest
+        
+        if format is None:
+            _, ext = os.path.splitext(path)
+            format = ext.lower().lstrip('.')
+            
+        if format == 'csv':
+            df = ingest.read_csv(path, **kwargs)
+        elif format in ['json', 'ndjson']:
+            df = ingest.read_json(path, **kwargs)
+        elif format == 'parquet':
+            df = ingest.read_parquet(path, **kwargs)
+        elif format in ['ipc', 'arrow', 'feather']:
+            df = ingest.read_ipc(path, **kwargs)
+        elif format == 'avro':
+            df = ingest.read_avro(path, **kwargs)
+        elif format == 'orc':
+            df = ingest.read_orc(path, **kwargs)
+        elif format in ['xls', 'xlsx', 'excel']:
+            df = ingest.read_excel(path, **kwargs)
+        elif format == 'delta':
+            df = ingest.read_delta(path, **kwargs)
+        elif format == 'lance':
+            df = ingest.read_lance(path, **kwargs)
+        elif format == 'vortex':
+            df = ingest.read_vortex(path, **kwargs)
+        elif format == 'hudi':
+            df = ingest.read_hudi(path, **kwargs)
+        elif format == 'xml':
+            df = ingest.read_xml(path, **kwargs)
+        elif format in ['sas', 'sas7bdat']:
+            df = ingest.read_sas(path, **kwargs)
+        elif format in ['sav', 'spss']:
+            df = ingest.read_spss(path, **kwargs)
+        elif format in ['dta', 'stata']:
+            df = ingest.read_stata(path, **kwargs)
+        else:
+            raise ValueError(f"Unsupported file format: {format}")
+            
+        self.append_to_table(table_name, df, branch=branch)
+    
     def read_table(
         self,
         table_name: str,

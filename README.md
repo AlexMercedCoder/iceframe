@@ -132,6 +132,9 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 - [Pydantic Integration](docs/pydantic.md)
 - [Notebook Integration](docs/notebooks.md)
 - [Data Ingestion](docs/ingest.md)
+- [Native File Ingestion](docs/ingest_native.md)
+- [Optional File Ingestion](docs/ingest_optional.md)
+- [Advanced File Ingestion](docs/ingest_advanced.md)
 
 ### Scalability
 - [Scalability Overview](docs/scalability.md)
