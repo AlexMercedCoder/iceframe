@@ -55,6 +55,10 @@ def read_vortex(path: str, **kwargs) -> pl.DataFrame:
         
     Returns:
         Polars DataFrame
+        
+    .. warning::
+        This function is speculative and based on unverified research. 
+        It assumes `vortex-data` API availability. Use with caution.
     """
     try:
         import vortex

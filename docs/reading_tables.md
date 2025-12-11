@@ -17,13 +17,29 @@ df = ice.read_table("users", columns=["id", "email"])
 ```
 
 ## Filtering
-
-Filter data at the source (predicate pushdown).
-
-```python
-# Filter expression using SQL-like syntax
-df = ice.read_table("sales", filter_expr="amount > 100 AND region = 'US'")
-```
+ 
+ Filter data at the source (predicate pushdown) or locally.
+ 
+ ### Local Filtering (String)
+ 
+ ```python
+ # Filter expression using SQL-like syntax (applied locally by Polars)
+ df = ice.read_table("sales", filter_expr="amount > 100 AND region = 'US'")
+ ```
+ 
+ ### Predicate Pushdown (Expression)
+ 
+ For better performance, use IceFrame Expressions to filter at the source (Iceberg).
+ 
+ ```python
+ from iceframe.expressions import col
+ 
+ # Filter applied by Iceberg (scans less data)
+ df = ice.read_table(
+     "sales", 
+     filter_expr=(col("amount") > 100) & (col("region") == "US")
+ )
+ ```
 
 ## Limiting Results
 

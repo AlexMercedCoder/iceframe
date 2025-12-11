@@ -113,8 +113,8 @@ class TableOperations:
         self,
         table_name: str,
         schema: Union[Schema, pa.Schema, pl.DataFrame, Dict[str, Any]],
-        partition_spec: Optional[List[tuple]] = None,
-        sort_order: Optional[List[str]] = None,
+        partition_spec: Optional[Union[List[tuple], 'PartitionSpec']] = None,
+        sort_order: Optional[Union[List[str], 'SortOrder']] = None,
         properties: Optional[Dict[str, str]] = None,
     ) -> Table:
         """
@@ -145,14 +145,28 @@ class TableOperations:
             # Namespace might already exist
             pass
         
+        # Handle partition spec and sort order
+        # If they are just passed as is, PyIceberg might expect specific objects.
+        # Ensure we don't pass explicit None if that breaks things, or convert.
+        
+        create_kwargs = {
+            "identifier": full_table_name,
+            "schema": iceberg_schema,
+            "properties": properties or {},
+        }
+        
+        if partition_spec is not None:
+             create_kwargs["partition_spec"] = partition_spec
+             
+        if sort_order is not None:
+             # For now, pass through assuming user passes valid object or PyIceberg handles it
+             create_kwargs["sort_order"] = sort_order
+        
         # Create the table
-        table_obj = self.catalog.create_table(
-            identifier=full_table_name,
-            schema=iceberg_schema,
-            properties=properties or {},
-        )
+        table_obj = self.catalog.create_table(**create_kwargs)
         
         return table_obj
+
     
     def get_table(self, table_name: str) -> Table:
         """Get a table by name"""
@@ -163,7 +177,7 @@ class TableOperations:
         self,
         table_name: str,
         columns: Optional[List[str]] = None,
-        filter_expr: Optional[str] = None,
+        filter_expr: Optional[Union[str, 'Expression']] = None,
         limit: Optional[int] = None,
         snapshot_id: Optional[int] = None,
         as_of_timestamp: Optional[int] = None,
@@ -174,7 +188,7 @@ class TableOperations:
         Args:
             table_name: Name of the table
             columns: Optional column selection
-            filter_expr: Optional filter expression
+            filter_expr: Optional filter expression (string for local filter, Expression object for pushdown)
             limit: Optional row limit
             snapshot_id: Optional snapshot ID for time travel
             as_of_timestamp: Optional timestamp for time travel
@@ -184,33 +198,46 @@ class TableOperations:
         """
         table = self.get_table(table_name)
         
+        # Determine row_filter for PyIceberg (pushdown)
+        from pyiceberg.expressions import AlwaysTrue
+        
+        # Check if filter_expr is an IceFrame Expression (for pushdown)
+        # We need to check class name or attribute since we can't easily import Expression here due to circular imports?
+        # Or just check if it has to_iceberg method
+        iceberg_filter = AlwaysTrue()
+        polars_filter_str = None
+        
+        if filter_expr is not None:
+            if hasattr(filter_expr, "to_iceberg"):
+                # It's an Expression object -> Pushdown
+                iceberg_filter = filter_expr.to_iceberg()
+            elif isinstance(filter_expr, str):
+                # It's a string -> Local filter
+                polars_filter_str = filter_expr
+        
         # Start with a scan
-        scan = table.scan()
+        scan = table.scan(
+            row_filter=iceberg_filter,
+            selected_fields=tuple(columns) if columns else ("*",),
+            limit=limit, # Pass limit to scan if supported by PyIceberg (it is in newer versions)
+            snapshot_id=snapshot_id,
+        )
         
-        # Apply column selection
-        if columns:
-            scan = scan.select(*columns)
+        # For older PyIceberg versions that don't support limit in scan(), we handle it later
         
-        # Apply filter (PyIceberg uses different filter syntax)
-        # For now, we'll read all data and filter with Polars
-        
-        # Apply time travel
-        if snapshot_id:
-            scan = scan.use_snapshot(snapshot_id)
-        elif as_of_timestamp:
-            scan = scan.use_ref(str(as_of_timestamp))
-        
+        if as_of_timestamp:
+             scan = scan.use_ref(str(as_of_timestamp))
+
         # Execute scan and convert to Polars
         arrow_table = scan.to_arrow()
         df = pl.from_arrow(arrow_table)
         
-        # Apply filter if provided (using Polars)
-        if filter_expr:
-            # Simple filter parsing - can be enhanced
-            df = df.filter(pl.sql_expr(filter_expr))
+        # Apply local string filter if provided
+        if polars_filter_str:
+            df = df.filter(pl.sql_expr(polars_filter_str))
         
-        # Apply limit
-        if limit:
+        # Apply limit locally (if not pushed down or for extra safety)
+        if limit and df.height > limit:
             df = df.head(limit)
         
         return df
@@ -219,7 +246,7 @@ class TableOperations:
         self,
         table_name: str,
         columns: Optional[List[str]] = None,
-        filter_expr: Optional[str] = None,
+        filter_expr: Optional[Union[str, 'Expression']] = None,
         limit: Optional[int] = None,
         snapshot_id: Optional[int] = None,
         as_of_timestamp: Optional[int] = None,
@@ -231,7 +258,7 @@ class TableOperations:
         Args:
             table_name: Name of the table
             columns: Optional column selection
-            filter_expr: Optional filter expression
+            filter_expr: Optional filter expression (Expression object for pushdown recommended)
             limit: Optional row limit
             snapshot_id: Optional snapshot ID
             as_of_timestamp: Optional timestamp
@@ -243,9 +270,14 @@ class TableOperations:
         table = self.get_table(table_name)
         from pyiceberg.expressions import AlwaysTrue
         
+        # Handle filter
+        iceberg_filter = AlwaysTrue()
+        if filter_expr is not None and hasattr(filter_expr, "to_iceberg"):
+             iceberg_filter = filter_expr.to_iceberg()
+        
         # Build scan arguments, filtering out None values to avoid issues with some PyIceberg versions
         scan_args = {
-            "row_filter": filter_expr if filter_expr is not None else AlwaysTrue(),
+            "row_filter": iceberg_filter,
             "selected_fields": tuple(columns) if columns else ("*",),
             "limit": limit,
             "snapshot_id": snapshot_id,
