@@ -59,3 +59,9 @@ tmp/
 requirements.md
 combined_docs.md
 iceframe_docs.md
+iceframe_docs.pdf
+
+# Generated Test Artifacts
+test_warehouse/
+test_warehouse_maint/
+tmp_catalog_repro/

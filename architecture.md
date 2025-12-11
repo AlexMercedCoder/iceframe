@@ -29,15 +29,11 @@ Modular components for specific capabilities:
 - **Schema Evolution** (`iceframe.schema`): Add/drop/rename/update columns.
 - **Partition Management** (`iceframe.partition`): Manage partition specs.
 - **Data Quality** (`iceframe.quality`): Data validation and constraints
-- **Table Maintenance** (`iceframe.maintenance`): Snapshot expiration, orphan file removal
-- **Garbage Collection** (`iceframe.gc`): Snapshot expiration, native orphan file removal.
-- **Compaction** (`iceframe.compaction`): Bin-packing and sorting strategies.
+- **Table Maintenance** (`iceframe.maintenance`): High-level interface for snapshot expiration and file removal.
+- **Garbage Collection** (`iceframe.gc`): Native implementation of snapshot expiration and orphan file (data & metadata) removal.
+- **Compaction** (`iceframe.compaction`): Bin-packing, sorting strategies, and manifest rewriting.
 - **Export** (`iceframe.export`): Export data to Parquet, CSV, JSON.
 - **Incremental Processing** (`iceframe.incremental`): Read only new data, CDC.
-- **Namespace Management** (`iceframe.namespace`): Manage schemas/databases.
-- **Schema Evolution** (`iceframe.schema`): `sync_schema` for auto-evolution.
-- **Partition Management** (`iceframe.partition`): Manage partition specs.
-- **Data Quality** (`iceframe.quality`): Data validation and constraints
 - **Visualization** (`iceframe.visualization`): Altair-based plotting
 - **Query Optimization** (`iceframe.query`): Partition-pruned updates.
 - **Ingestion** (`iceframe.ingest`): Multi-format support.

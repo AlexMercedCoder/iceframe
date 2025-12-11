@@ -41,6 +41,23 @@ print(f"Removed {len(removed)} orphaned files")
 > [!TIP]
 > Always run with `dry_run=True` first to verify which files will be removed.
 
+### Metadata Cleanup
+
+The `remove_orphan_files` method also safely identifies and removes orphaned metadata files (like `metadata.json`, manifest lists, and manifests) that are no longer part of the table's history or reachable from valid snapshots.
+
+## Native Manifest Rewriting
+
+Optimize table metadata by rewriting manifest files to combine small manifests into larger ones. This improves query planning performance.
+
+```python
+# Rewrite manifests to optimize metadata
+ice.rewrite_manifests("my_table")
+```
+
+This operation:
+1.  Checks if native `rewrite_manifests` is supported by the underlying implementation.
+2.  Delegates to specific `CompactionManager` logic.
+
 ## Native Snapshot Expiration
 
 Expire old snapshots to reduce metadata size and improve query planning performance.

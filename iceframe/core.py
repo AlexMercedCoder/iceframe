@@ -1024,7 +1024,7 @@ class IceFrame:
             (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
         )
         
-        gc.remove_orphan_files(older_than_ms=older_than_ms)
+        return gc.remove_orphan_files(older_than_ms=older_than_ms)
     
     def compact_data_files(
         self,
@@ -1047,6 +1047,19 @@ class IceFrame:
         compactor = CompactionManager(table)
         
         return compactor.bin_pack(target_file_size_mb=target_file_size_mb)
+        
+    def rewrite_manifests(self, table_name: str) -> None:
+        """
+        Rewrite manifest files to optimize metadata.
+        
+        Args:
+            table_name: Name of the table
+        """
+        from iceframe.compaction import CompactionManager
+        table = self.get_table(table_name)
+        compactor = CompactionManager(table)
+        
+        compactor.rewrite_manifests()
     
     # Export operations
     

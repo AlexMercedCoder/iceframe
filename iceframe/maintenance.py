@@ -43,20 +43,14 @@ class TableMaintenance:
         """
         table = self._get_table(table_name)
         
-        # Calculate timestamp threshold
-        expire_timestamp_ms = int(
+        # Use simple calculation if specific logic needed, but let GC handle it
+        older_than_ms = int(
             (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
         )
         
-        # Expire snapshots
-        try:
-            table.expire_snapshots(
-                older_than=expire_timestamp_ms,
-                retain_last=retain_last,
-            )
-        except AttributeError:
-            # Fallback for different PyIceberg versions
-            print(f"Snapshot expiration not supported for table {table_name}")
+        from iceframe.gc import GarbageCollector
+        gc = GarbageCollector(table)
+        gc.expire_snapshots(older_than_ms=older_than_ms, retain_last=retain_last)
     
     def remove_orphan_files(
         self,
@@ -72,16 +66,13 @@ class TableMaintenance:
         """
         table = self._get_table(table_name)
         
-        # Calculate timestamp threshold
         older_than_ms = int(
             (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
         )
         
-        # Remove orphan files
-        try:
-            table.remove_orphan_files(older_than_ms=older_than_ms)
-        except AttributeError:
-            print(f"Orphan file removal not supported for table {table_name}")
+        from iceframe.gc import GarbageCollector
+        gc = GarbageCollector(table)
+        gc.remove_orphan_files(older_than_ms=older_than_ms)
     
     def compact_data_files(
         self,
@@ -97,15 +88,9 @@ class TableMaintenance:
         """
         table = self._get_table(table_name)
         
-        target_size_bytes = target_file_size_mb * 1024 * 1024
-        
-        # Rewrite data files
-        try:
-            table.rewrite_data_files(
-                target_file_size_bytes=target_size_bytes,
-            )
-        except AttributeError:
-            print(f"Data file compaction not supported for table {table_name}")
+        from iceframe.compaction import CompactionManager
+        compactor = CompactionManager(table)
+        compactor.bin_pack(target_file_size_mb=target_file_size_mb)
     
     def rewrite_manifests(self, table_name: str) -> None:
         """
@@ -116,7 +101,6 @@ class TableMaintenance:
         """
         table = self._get_table(table_name)
         
-        try:
-            table.rewrite_manifests()
-        except AttributeError:
-            print(f"Manifest rewriting not supported for table {table_name}")
+        from iceframe.compaction import CompactionManager
+        compactor = CompactionManager(table)
+        compactor.rewrite_manifests()
