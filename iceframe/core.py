@@ -1029,31 +1029,66 @@ class IceFrame:
     def compact_data_files(
         self,
         table_name: str,
-        target_file_size_mb: int = 512,
+        target_file_size_mb: int = 128,
+        filter_expr: Optional[str] = None,
+        min_input_files: int = 1,
+        partition_filter: Optional[dict] = None,
+        deduplicate: bool = False,
+        max_workers: int = 1,
         **kwargs
-    ) -> Dict[str, int]:
+    ) -> dict:
         """
-        Compact small data files into larger ones.
+        Compact data files in a table.
         
         Args:
             table_name: Name of the table
-            target_file_size_mb: Target file size in MB
-            **kwargs: Additional options:
-                      - min_input_files (int): Skip partitions with fewer files (default: 1)
-                      - partition_filter (dict): Target specific partitions (e.g. {'cat': 'A'})
-                      - deduplicate (bool): Remove duplicate rows (default: False)
-            
-        Example:
-            >>> ice.compact_data_files("my_table", min_input_files=5, deduplicate=True)
-            >>> ice.compact_data_files("my_table", partition_filter={'region': 'us-east'})
+            target_file_size_mb: Target size of files in MB
+            filter_expr: Optional filter expression
+            min_input_files: Min files to trigger compaction per partition
+            partition_filter: Target specific partitions (dict)
+            deduplicate: Remove duplicate rows
+            max_workers: Number of threads for parallel compaction
+            **kwargs: Extra arguments (e.g. `dry_run`, `retries`, `compression`)
         """
         from iceframe.compaction import CompactionManager
         
         table = self.get_table(table_name)
         compactor = CompactionManager(table)
+        return compactor.bin_pack(
+            target_file_size_mb=target_file_size_mb,
+            filter_expr=filter_expr,
+            min_input_files=min_input_files,
+            partition_filter=partition_filter,
+            deduplicate=deduplicate,
+            max_workers=max_workers,
+            **kwargs
+        )
         
-        return compactor.bin_pack(target_file_size_mb=target_file_size_mb, **kwargs)
+    def z_order_optimize(self, table_name: str, columns: list, **kwargs) -> dict:
+        """
+        Optimize table layout using Z-Order clustering (approximate).
         
+        Args:
+            table_name: Table to optimize
+            columns: List of columns to cluster
+        """
+        from iceframe.compaction import CompactionManager
+        table = self.get_table(table_name)
+        return CompactionManager(table).z_order_optimize(columns, **kwargs)
+        
+    def configure_bloom_filters(self, table_name: str, columns: list, fpp: float = 0.01) -> dict:
+        """
+        Enable Bloom Filters for specific columns.
+        
+        Args:
+            table_name: Table name
+            columns: Columns to index
+            fpp: False positive probability
+        """
+        from iceframe.compaction import CompactionManager
+        table = self.get_table(table_name)
+        return CompactionManager(table).enable_bloom_filters(columns, fpp)
+
     def rewrite_manifests(self, table_name: str) -> None:
         """
         Rewrite manifest files to optimize metadata.

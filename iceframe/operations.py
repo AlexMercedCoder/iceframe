@@ -258,6 +258,19 @@ class TableOperations:
         # Create the table
         table_obj = self.catalog.create_table(**create_kwargs)
         
+        # If input was a DataFrame or Table, write the data
+        try:
+             initial_data = None
+             if isinstance(schema, pl.DataFrame):
+                 initial_data = schema.to_arrow()
+             elif isinstance(schema, pa.Table):
+                 initial_data = schema
+             
+             if initial_data is not None and initial_data.num_rows > 0:
+                 table_obj.append(initial_data)
+        except Exception as e:
+             print(f"Warning: Failed to write initial data to table {table_name}: {e}")
+        
         return table_obj
 
     
