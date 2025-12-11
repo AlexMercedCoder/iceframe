@@ -18,7 +18,9 @@ class CompactionManager:
     def bin_pack(
         self,
         target_file_size_mb: int = 128,
-        filter_expr: Optional[str] = None
+        filter_expr: Optional[str] = None,
+        min_input_files: int = 1,
+        **kwargs
     ) -> Dict[str, int]:
         """
         Compact small files into larger files (Bin-packing).
@@ -27,81 +29,135 @@ class CompactionManager:
         Args:
             target_file_size_mb: Target size in MB
             filter_expr: Optional filter to select files to compact
+            min_input_files: Minimum number of files required in a partition to trigger compaction
             
         Returns:
             Stats on compacted files
         """
-        # 1. Check if PyIceberg has native support
-        try:
-            if hasattr(self.table, 'rewrite_data_files'):
-                # Note: Basic support might not handle all args yet
-                # result = self.table.rewrite_data_files()
-                # return result
-                pass 
-        except Exception:
-            pass
+        # 1. Check if PyIceberg has native support (and if no custom options used)
+        if min_input_files == 1:
+            try:
+                if hasattr(self.table, 'rewrite_data_files'):
+                    # Note: Basic support might not handle all args yet
+                    # result = self.table.rewrite_data_files()
+                    # return result
+                    pass 
+            except Exception:
+                pass
             
-        # 2. Manual Implementation (Safe)
+        # 2. Manual Implementation (Safe & Smart)
         
-        # Scan to find files (using PyArrow to avoid loading data)
-        # Note: We want to group by partition.
-        
-        # Get all tasks/files
+        # Scan to find files (using plan_files for metadata access)
         scan = self.table.scan()
         if filter_expr:
             scan = scan.filter(filter_expr)
             
-        # We need to know the total size to warn user
-        # This is hard to get efficiently without full file list scan which PyIceberg does lazily
-        # But we can iterate partitions.
+        # Analyze partitions
+        print("Analyzing table partitions...")
+        partition_stats = {}
         
-        # Strategy:
-        # A. Identify distinct partitions present in the table (or filtered view).
-        # B. For each partition:
-        #    1. Read partition data.
-        #    2. Check size (approx).
-        #    3. Write back (compacted).
-        
-        # A. Identify partitions
-        spec = self.table.spec()
-        if not spec.fields:
-             # Non-partitioned table
-             # Check total rows or size constraint?
-             # For now, just do it, but maybe warn if too big?
+        # Iterate tasks to gather stats
+        try:
+            for task in scan.plan_files():
+                # Task has .file which is DataFile
+                f = task.file
+                # Partition key (Record)
+                p_key = str(f.partition) # Use string rep as key for now
+                
+                if p_key not in partition_stats:
+                    partition_stats[p_key] = {"count": 0, "bytes": 0, "partition": f.partition}
+                    
+                partition_stats[p_key]["count"] += 1
+                partition_stats[p_key]["bytes"] += f.file_size_in_bytes
+        except Exception as e:
+            print(f"Warning: Failed to gather stats via plain_files: {e}")
+            # Fallback to simple iteration if plan_files fails (e.g. unpartitioned)
+            pass
+
+        # If no stats gathered (maybe empty or error), fallback to old logic for unpartitioned
+        if not partition_stats:
+             # Logic for unpartitioned table or fallback
              pass
              
-        # Extract partition columns
+        # Filter partitions to compact
+        partitions_to_compact = []
+        skipped_partitions = 0
+        
+        for p_key, stats in partition_stats.items():
+            if stats["count"] >= min_input_files:
+                partitions_to_compact.append(stats["partition"])
+            else:
+                skipped_partitions += 1
+                
+        if not partitions_to_compact and skipped_partitions > 0:
+            return {
+                "rewritten_rows": 0,
+                "strategy": "skipped_all",
+                "message": f"Skipped {skipped_partitions} partitions (min_input_files={min_input_files})"
+            }
+            
+        # Perform Compaction on selected partitions
+        total_rows = 0
+        from pyiceberg.expressions import EqualTo, And, AlwaysTrue
+        
+        print(f"Compacting {len(partitions_to_compact)} partitions (Skipped {skipped_partitions})...")
+        
+        for partition_val in partitions_to_compact:
+            # Build Partition Filter
+            part_filter = AlwaysTrue()
+            
+            # Handle unpartitioned or empty partition record
+            if not isinstance(partition_val, dict) and not hasattr(partition_val, "as_dict"):
+                 # Likely unpartitioned if it's an empty record
+                 pass
+            
+            # Access fields from Record
+            if hasattr(partition_val, "as_dict"):
+                pass # Use record fields
+            
+            # Reconstruct filter from partition values
+            # This is tricky because `partition_val` is an internal Record.
+            # We need to match it against the partition spec fields.
+            
+            # Simpler approach: If we have the partition values, we can just use them.
+            # But constructing the generic filter is safer via the scan logic used before.
+            # Let's revert to the previous 'unique partition' scan approach BUT filtered by our decision.
+            pass
+
+        # Re-implementation using the "Iterate Unique Partitions" pattern but with counts
+        # Since we already decided which ones to compact based on plan_files, we can just filter.
+        
+        spec = self.table.spec()
         schema = self.table.schema()
         source_col_ids = [f.source_id for f in spec.fields]
         source_col_names = [schema.find_field(id).name for id in source_col_ids]
         
         if not source_col_names:
-            # Unpartitioned: Read all, Rewrite all
-            # DANGER: Memory usage
+            # Unpartitioned
             arrow_table = scan.to_arrow()
             if arrow_table.num_rows == 0:
                  return {"rewritten_rows": 0}
             
-            # Simple overwrite
+            # Check file count for unpartitioned? 
+            # We'd need to know file count. 
+            # plan_files gave us that globally.
+            global_count = sum(s["count"] for s in partition_stats.values()) if partition_stats else 0
+            if global_count < min_input_files and global_count > 0:
+                return {"rewritten_rows": 0, "message": "Skipped unpartitioned (fewer than min files)"}
+
             self.table.overwrite(arrow_table)
             return {"rewritten_rows": arrow_table.num_rows, "strategy": "bin_pack_full"}
             
-        # Partitioned: Iterate
-        # 1. Get unique partitions
-        # Ensure we only scan relevant columns for speed
+        # Partitioned
         partition_dist_scan = self.table.scan(selected_fields=tuple(source_col_names))
         if filter_expr:
-             from pyiceberg.expressions import parser
-             # Need to parse string to expression if provided
-             # Skipping complex parsing here, assuming scan.filter handled it if valid
-             pass
-             
+             partition_dist_scan = partition_dist_scan.filter(filter_expr)
+
         partitions_df = pl.from_arrow(partition_dist_scan.to_arrow()).unique()
         
+        # Reset skipped count for the actual execution loop
+        skipped_partitions = 0
         total_rows = 0
-        from pyiceberg.expressions import EqualTo, And, AlwaysTrue
-        
-        print(f"Compacting {partitions_df.height} partitions...")
         
         for row in partitions_df.to_dicts():
             # Build Partition Filter
@@ -112,6 +168,29 @@ class CompactionManager:
                  else:
                      part_filter = And(part_filter, EqualTo(col, val))
             
+            # Check file count for this partition
+            # We can use our pre-computed stats if we can match the key
+            # Or just do a quick scan since we are processing one by one anyway
+            
+            # Fast scan for file count
+            # This scans manifests, not data, so it's fast
+            try:
+                part_files_count = 0
+                part_scan = self.table.scan(row_filter=part_filter)
+                # plan_files is a generator
+                for _ in part_scan.plan_files():
+                    part_files_count += 1
+                    if part_files_count >= min_input_files:
+                        break # Optimization: enough files found
+                
+                if part_files_count < min_input_files:
+                    # Skip
+                    skipped_partitions += 1
+                    continue
+            except:
+                # Fallback if plan_files fails, just read
+                pass
+
             # Read Partition
             part_arrow = self.table.scan(row_filter=part_filter).to_arrow()
             if part_arrow.num_rows == 0:
@@ -124,9 +203,9 @@ class CompactionManager:
             
         return {
             "rewritten_rows": total_rows,
-            "strategy": "bin_pack_partitioned"
+            "strategy": "bin_pack_partitioned",
+            "skipped_partitions": skipped_partitions
         }
-
     def sort(
         self,
         sort_order: List[str],

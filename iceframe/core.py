@@ -1030,23 +1030,25 @@ class IceFrame:
         self,
         table_name: str,
         target_file_size_mb: int = 512,
-    ) -> None:
+        **kwargs
+    ) -> Dict[str, int]:
         """
         Compact small data files into larger ones.
         
         Args:
             table_name: Name of the table
             target_file_size_mb: Target file size in MB
+            **kwargs: Additional options (e.g., min_input_files)
             
         Example:
-            >>> ice.compact_data_files("my_table", target_file_size_mb=256)
+            >>> ice.compact_data_files("my_table", target_file_size_mb=256, min_input_files=5)
         """
         from iceframe.compaction import CompactionManager
         
         table = self.get_table(table_name)
         compactor = CompactionManager(table)
         
-        return compactor.bin_pack(target_file_size_mb=target_file_size_mb)
+        return compactor.bin_pack(target_file_size_mb=target_file_size_mb, **kwargs)
         
     def rewrite_manifests(self, table_name: str) -> None:
         """
