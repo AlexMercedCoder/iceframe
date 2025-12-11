@@ -43,6 +43,7 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - [Distributed Processing (Ray)](docs/distributed.md)
 - [Async Operations](docs/async.md)
 - [Notebook Integration](docs/notebooks.md)
+- [Scalable Updates](docs/scalable_updates.md)
 
 ### Table Management
 - [Namespace Management](docs/namespaces.md)
@@ -55,6 +56,7 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 ### Maintenance & Quality
 - [Table Maintenance](docs/maintenance.md)
 - [Native Maintenance](docs/native_maintenance.md)
+- [Safe Compaction](docs/compaction.md)
 - [Streaming Auto-Compaction](docs/streaming_compaction.md)
 - [Data Quality](docs/data_quality.md)
 - [Enhanced Data Quality](docs/data_quality_enhanced.md)

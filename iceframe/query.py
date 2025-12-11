@@ -245,24 +245,19 @@ class QueryBuilder:
         """
         Update rows matching the filter.
         
-        Note: Iceberg UPDATE is typically Merge-on-Read or Copy-on-Write.
-        PyIceberg support for UPDATE is evolving.
-        We will implement a simple Copy-on-Write approach:
-        1. Read all data
-        2. Update matching rows in memory
-        3. Overwrite the table
-        
-        WARNING: This is expensive for large tables!
+        Optimized Copy-on-Write:
+        1. Identify affected partitions (if partitioned).
+        2. Read only affected partitions.
+        3. Apply updates in memory.
+        4. Overwrite those partitions.
         """
-        # 1. Read all data
-        df = self.operations.read_table(self.table_name)
-        
-        # 2. Apply updates
-        # We need to identify rows to update based on filter
         if not self._filter_exprs:
              raise ValueError("UPDATE requires a filter")
              
-        # Build filter mask
+        table = self.operations.get_table(self.table_name)
+        spec = table.spec()
+        
+        # Build filter mask for Polars
         mask = None
         for expr in self._filter_exprs:
             condition = expr.to_polars()
@@ -270,9 +265,13 @@ class QueryBuilder:
                 mask = condition
             else:
                 mask = mask & condition
-        
-        # Apply updates using mask
-        # df.with_columns(pl.when(mask).then(new_val).otherwise(col))
+                
+        # Build Iceberg filter for identification
+        from pyiceberg.expressions import And
+        ice_filter = self._filter_exprs[0].to_iceberg()
+        for f in self._filter_exprs[1:]:
+            ice_filter = And(ice_filter, f.to_iceberg())
+            
         update_exprs = []
         for col_name, new_value in updates.items():
             val_expr = pl.lit(new_value)
@@ -282,11 +281,135 @@ class QueryBuilder:
                 .otherwise(pl.col(col_name))
                 .alias(col_name)
             )
-            
-        df = df.with_columns(update_exprs)
+
+        # Check if table is partitioned
+        if not spec.fields:
+            # Not partitioned - full rewrite
+            print("Table not partitioned, performing full rewrite.")
+            df = self.operations.read_table(self.table_name)
+            df = df.with_columns(update_exprs)
+            self.operations.overwrite_table(self.table_name, df)
+            return
+
+        # Partitioned Optimization
+        # 1. Identify affected data files/partitions
+        # We can scan with the filter and get the list of files.
+        # Then, for each unique partition tuple found, we rewrite THAT partition.
         
-        # 3. Overwrite table
-        self.operations.overwrite_table(self.table_name, df)
+        # Note: Accessing partition values from scan tasks might be complex.
+        # Simpler approach:
+        # 1. Scan matched data to get distinct partition values.
+        # This assumes we can select partition cols.
+        # If partition cols are hidden (transforms), we need to select source cols and re-derive?
+        # Or just select existing partition columns if they exist in schema.
+        
+        # Let's try to get distinct values of partition source columns from the filtered data.
+        # This is accurate enough.
+        
+        partition_cols = [f.name for f in spec.fields]
+        # Note: field names in spec might be source_column or transformed name.
+        # We need source column names for querying.
+        # spec.fields[i].source_id maps to schema.
+        
+        # Let's just scan the matching rows using the filter
+        # And select * (or just needed cols)
+        # Then find the distinct partitions.
+        # But wait, we need to overwrite the *whole* partition, so we need to know WHICH partitions.
+        
+        # Strategy:
+        # 1. Read matches: `df_matches = scan(filter=ice_filter).to_polars()`
+        # 2. Get unique partitions: `partitions = df_matches.select(partition_source_cols).unique()`
+        # 3. For each partition P:
+        #    a. Read ALL data for P: `df_p = scan(filter=P).to_polars()` (ignoring the update filter)
+        #    b. Apply update logic to `df_p` using the update filter
+        #    c. Overwrite P using `overwrite(df_p, overwrite_filter=P)`
+        
+        # Problem: `overwrite` in PyIceberg might not support `overwrite_filter` easily in high-level API?
+        # IceFrame's `overwrite_table` does `table.overwrite(df.to_arrow())`.
+        # PyIceberg's `overwrite` will replace data that matches the input dataframe? 
+        # No, `overwrite` typically replaces data matching a filter OR replaces all data.
+        # PyIceberg `overwrite` accepts a `DataFile` list or similar?
+        # Actually PyIceberg `overwrite` method on Table:
+        # `def overwrite(self, df: pa.Table, overwrite_filter: BooleanExpression = AlwaysTrue())`
+        # YES! It supports specific overwrite filter.
+        
+        # So we need to:
+        # 1. Identify source columns for partitioning
+        schema = table.schema()
+        source_col_ids = [f.source_id for f in spec.fields]
+        source_col_names = [schema.find_field(id).name for id in source_col_ids]
+        
+        # 2. Scan to find Affected Partitions
+        # We only need to read the partition columns to identify them
+        affected_rows = table.scan(
+            row_filter=ice_filter,
+            selected_fields=tuple(source_col_names)
+        ).to_arrow()
+        
+        if len(affected_rows) == 0:
+            return # No updates needed
+            
+        affected_df = pl.from_arrow(affected_rows)
+        distinct_partitions = affected_df.unique()
+        
+        print(f"Updating {distinct_partitions.height} partitions...")
+        
+        # 3. Loop and Update
+        # Ideally we batch this or do it in one go if filter can be constructed?
+        # If we construct a filter "PartCol IN (val1, val2...)" we can read all those partitions at once.
+        # But `overwrite` needs to know it's replacing THOSE partitions.
+        # If we pass a filter to `overwrite` matching those partitions, and valid data for those partitions, it should work.
+        
+        # Construct a filter for ALL affected partitions
+        # This might be big if many partitions.
+        # Let's do it per partition for safety/memory, or grouped?
+        # Let's try doing it for all affected partitions at once (if memory allows).
+        # Safe Compaction will handle memory later.
+        
+        # Build filter: (P1_col == val1 AND P2_col == val2) OR (...)
+        # Using Polars to generate the filter expression string or just iterate?
+        
+        # Iterating is safer for memory.
+        from pyiceberg.expressions import EqualTo, And
+        
+        rows = distinct_partitions.to_dicts()
+        for row in rows:
+            # 3a. Build Partition Filter
+            part_filter = AlwaysTrue()
+            for col, val in row.items():
+                # Note: Handling types (date, etc) might be tricky if not careful.
+                # Assuming simple types for now.
+                 if part_filter == AlwaysTrue():
+                     part_filter = EqualTo(col, val)
+                 else:
+                     part_filter = And(part_filter, EqualTo(col, val))
+            
+            # 3b. Read Full Partition
+            # We use the partition filter to get ALL rows in that partition
+            part_arrow = table.scan(row_filter=part_filter).to_arrow()
+            part_df = pl.from_arrow(part_arrow)
+            
+            # 3c. Apply Updates
+            # We apply the user's update logic (which uses the mask)
+            # The mask is based on the original filter.
+            # We need to re-evaluate the mask against this partition df.
+            # But the mask `expr.to_polars()` works on the df context.
+            
+            updated_part_df = part_df.with_columns(update_exprs)
+            
+            # 3d. Overwrite Partition
+            # We overwrite only this partition
+            try:
+                 table.overwrite(updated_part_df.to_arrow(), overwrite_filter=part_filter)
+            except TypeError:
+                # Fallback if overwrite_filter not supported in version
+                # But PyIceberg 0.6+ supports it. 
+                # If checking IceFrame operations wrapper:
+                # We need to call table.overwrite directly, bypassed operations wrapper if needed
+                # or add support to operations.overwrite_table.
+                # Here we are using table object directly.
+                table.overwrite(updated_part_df.to_arrow(), overwrite_filter=part_filter)
+
 
     def merge(self, source_data: pl.DataFrame, on: str, 
               when_matched_update: Optional[Dict[str, Any]] = None,

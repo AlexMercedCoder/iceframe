@@ -9,6 +9,26 @@ IceFrame provides a simple API for evolving table schemas without rewriting data
 schema_evo = ice.alter_table("users")
 ```
 
+## Smart Schema Evolution (Sync)
+
+You can automatically synchronize your table schema with a DataFrame. This is useful for ETL pipelines where source schemas might change.
+
+```python
+new_df = pl.DataFrame({
+    "id": [1], 
+    "name": ["Alice"],
+    "new_col": ["Value"] # New column
+})
+
+# Detects 'new_col' and adds it
+ice.alter_table("users").sync_schema(new_df)
+```
+
+**Features:**
+-   **Additive**: Adds new columns automatically.
+-   **Type Promotion**: Updates compatible types (e.g., `int` -> `long`).
+-   **Safe**: Does not drop columns by default (use `allow_drops=True` to enable).
+
 ## Adding Columns
 
 ```python

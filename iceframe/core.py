@@ -811,6 +811,7 @@ class IceFrame:
         table_name: str,
         data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
         branch: Optional[str] = None,
+        validators: Optional[List[Any]] = None,
     ) -> None:
         """
         Append data to an existing Iceberg table.
@@ -819,11 +820,42 @@ class IceFrame:
             table_name: Name of the table
             data: Data to append (Polars DataFrame, PyArrow Table, or dict)
             branch: Optional branch name to write to (for WAP pattern)
+            validators: Optional list of validation checks (functions or Polars expressions)
+                        that must pass before writing.
             
         Example:
             >>> df = pl.DataFrame({"id": [1], "name": ["Alice"]})
-            >>> ice.append_to_table("my_table", df)
+            >>> ice.append_to_table(
+            ...     "my_table", 
+            ...     df,
+            ...     validators=[pl.col("id") > 0]
+            ... )
         """
+        # Validate data if validators provided
+        if validators:
+            from iceframe.quality import DataValidator
+            
+            # Ensure data is Polars DataFrame for validation
+            if isinstance(data, pl.DataFrame):
+                df = data
+            elif isinstance(data, pa.Table):
+                df = pl.from_arrow(data)
+            elif isinstance(data, dict):
+                df = pl.DataFrame(data)
+            else:
+                 # Try to convert or assume it works
+                 try:
+                     df = pl.DataFrame(data)
+                 except:
+                     raise ValueError(f"Could not convert data of type {type(data)} to Polars DataFrame for validation")
+            
+            validator = DataValidator(self)
+            result = validator.validate(df, validators)
+            
+            if not result["passed"]:
+                details = "\n".join(result["details"])
+                raise ValueError(f"Data validation failed:\n{details}")
+        
         self._operations.append_to_table(table_name, data, branch=branch)
 
     def insert_items(self, table_name: str, items: List[BaseModel], branch: Optional[str] = None) -> None:
@@ -1014,7 +1046,7 @@ class IceFrame:
         table = self.get_table(table_name)
         compactor = CompactionManager(table)
         
-        compactor.bin_pack(target_file_size_mb=target_file_size_mb)
+        return compactor.bin_pack(target_file_size_mb=target_file_size_mb)
     
     # Export operations
     

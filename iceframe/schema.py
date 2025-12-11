@@ -2,7 +2,7 @@
 Schema evolution for IceFrame.
 """
 
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Dict, List
 from pyiceberg.table import Table
 from pyiceberg.types import IcebergType, StringType, LongType, IntegerType, DoubleType, FloatType, BooleanType, DateType, TimestampType
 import pyarrow as pa
@@ -61,6 +61,94 @@ class SchemaEvolution:
         with self.table.update_schema() as update:
             update.update_column(name, field_type=iceberg_type)
             
+    def sync_schema(self, df: 'pl.DataFrame', allow_drops: bool = False) -> Dict[str, List[str]]:
+        """
+        Synchronize table schema with DataFrame schema.
+        
+        Args:
+            df: Polars DataFrame with new schema
+            allow_drops: If True, drop columns missing in df (CAUTION)
+            
+        Returns:
+            Dict with changes applied {"added": [], "updated": [], "dropped": []}
+        """
+        import polars as pl
+        
+        changes = {"added": [], "updated": [], "dropped": []}
+        
+        current_schema = self.table.schema()
+        # Map current fields: name -> field
+        # Note: only top-level fields for simplicity (nested support is complex)
+        current_fields = {f.name: f for f in current_schema.fields}
+        
+        new_schema = df.schema
+        # Polars schema is dict-like {name: DataType}
+        
+        for name, dtype in new_schema.items():
+            if name not in current_fields:
+                # Add new column
+                iceberg_type = self._polars_to_iceberg(dtype)
+                with self.table.update_schema() as update:
+                    update.add_column(name, iceberg_type)
+                changes["added"].append(name)
+            else:
+                # Check for type promotion (e.g. int -> long)
+                # This requires comparing PyIceberg types with Polars types
+                current_type = current_fields[name].field_type
+                new_type = self._polars_to_iceberg(dtype)
+                
+                # Simple string representation comparison or direct type check
+                if current_type != new_type:
+                    # Attempt update (PyIceberg will validate compatibility)
+                    try:
+                        with self.table.update_schema() as update:
+                            update.update_column(name, field_type=new_type)
+                        changes["updated"].append(f"{name}: {current_type} -> {new_type}")
+                    except Exception:
+                        # Incompatible type change
+                        pass
+                        
+        if allow_drops:
+            for name in current_fields:
+                if name not in new_schema:
+                    try:
+                        with self.table.update_schema() as update:
+                            update.delete_column(name)
+                        changes["dropped"].append(name)
+                    except Exception as e:
+                        print(f"Failed to drop column {name}: {e}")
+                        
+        return changes
+
+    def _polars_to_iceberg(self, pl_type) -> IcebergType:
+        """Convert Polars type to IcebergType"""
+        import polars as pl
+        
+        # String/Utf8
+        if pl_type == pl.Utf8 or pl_type == pl.String:
+            return StringType()
+        # Integers
+        elif pl_type in (pl.Int8, pl.Int16, pl.Int32):
+            return IntegerType()
+        elif pl_type == pl.Int64:
+            return LongType()
+        # Floats
+        elif pl_type == pl.Float32:
+            return FloatType()
+        elif pl_type == pl.Float64:
+            return DoubleType()
+        # Boolean
+        elif pl_type == pl.Boolean:
+            return BooleanType()
+        # Date/Time
+        elif pl_type == pl.Date:
+            return DateType()
+        elif pl_type == pl.Datetime:
+            return TimestampType()
+        else:
+            # Default to string for unknown/complex types
+            return StringType()
+
     def _parse_type(self, type_str: str) -> IcebergType:
         """Parse string type to IcebergType"""
         type_str = type_str.lower()

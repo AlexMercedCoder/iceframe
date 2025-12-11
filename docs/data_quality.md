@@ -1,40 +1,44 @@
-# Data Quality
+# Data Quality Hooks
 
-IceFrame includes a Data Validator to ensure data quality before or after operations.
+IceFrame allows you to enforce data quality rules at write time. By attaching validators to `append_to_table`, you can reject invalid data before it corrupts your table.
 
-## Accessing Data Validator
+## Usage
 
-```python
-validator = ice.validator
-```
+Pass a list of validation checks to `validators`. These can be **Polars Expressions** (must return True) or **Callable functions** (must return True).
 
-## Checking for Nulls
+### Using Polars Expressions
 
-Check if specific columns contain null values.
+Efficient and expressive checks using the Polars expression API.
 
 ```python
 import polars as pl
 
-df = pl.DataFrame(...)
+# Data must have positive id and non-null name
+validators = [
+    pl.col("id") > 0,
+    pl.col("name").is_not_null()
+]
 
-if not ice.validator.check_nulls(df, ["id", "created_at"]):
-    print("Data contains nulls in required columns!")
+try:
+    ice.append_to_table("users", new_users_df, validators=validators)
+except ValueError as e:
+    print("Validation failed!")
+    print(e)
 ```
 
-## Validating Constraints
+### Using Custom Functions
 
-Validate data against SQL-like constraints or custom functions.
+For complex logic not easily expressed in Polars.
 
 ```python
-import polars as pl
+def check_email_format(df):
+    # Custom python logic checking email column
+    return df["email"].str.contains("@").all()
 
-df = pl.DataFrame(...)
-
-results = ice.validator.validate(df, [
-    pl.col("age") > 0,
-    pl.col("status").is_in(["active", "inactive"])
-])
-
-if not results["passed"]:
-    print("Validation failed:", results["details"])
+ice.append_to_table("users", df, validators=[check_email_format])
 ```
+
+## Supported Operations
+
+-   `append_to_table`
+-   `create_table_from_*` (Create and Append) - *Coming soon* (Require calling append manually for validation currently)
