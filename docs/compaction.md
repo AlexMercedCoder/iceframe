@@ -36,6 +36,18 @@ ice.compact_data_files("sales", target_file_size_mb=128, min_input_files=5)
 | :--- | :--- | :--- | :--- |
 | `target_file_size_mb` | int | 128 | Target output file size in MB. |
 | `min_input_files` | int | 1 | Minimum number of files in a partition to trigger compaction. Partitions with fewer files are skipped. |
+| `partition_filter` | dict | None | Dictionary of col=value to only compact specific partitions. Example: `{"region": "us"}` |
+| `deduplicate` | bool | False | If True, drops duplicate rows within the compacted partition. |
+
+### Targeted Compaction Example
+
+```python
+# 1. Target specific partition
+ice.compact_data_files("sales", partition_filter={"date": "2024-01-01"})
+
+# 2. Remove duplicates while compacting
+ice.compact_data_files("sales", deduplicate=True)
+```
 
 ## Sort Compaction
 

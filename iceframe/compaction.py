@@ -20,6 +20,8 @@ class CompactionManager:
         target_file_size_mb: int = 128,
         filter_expr: Optional[str] = None,
         min_input_files: int = 1,
+        partition_filter: Optional[Dict[str, Any]] = None,
+        deduplicate: bool = False,
         **kwargs
     ) -> Dict[str, int]:
         """
@@ -30,27 +32,43 @@ class CompactionManager:
             target_file_size_mb: Target size in MB
             filter_expr: Optional filter to select files to compact
             min_input_files: Minimum number of files required in a partition to trigger compaction
+            partition_filter: Dict of column=value to filter specific partitions (e.g. {'cat': 'A'})
+            deduplicate: Whether to deduplicate fully identical rows during compaction
             
         Returns:
             Stats on compacted files
         """
         # 1. Check if PyIceberg has native support (and if no custom options used)
-        if min_input_files == 1:
+        # Note: If deduplicate or partition_filter dict is used, we MUST use manual path
+        if min_input_files == 1 and not deduplicate and not partition_filter:
             try:
                 if hasattr(self.table, 'rewrite_data_files'):
-                    # Note: Basic support might not handle all args yet
-                    # result = self.table.rewrite_data_files()
-                    # return result
                     pass 
             except Exception:
                 pass
             
         # 2. Manual Implementation (Safe & Smart)
         
-        # Scan to find files (using plan_files for metadata access)
+        # Build scan with filters
         scan = self.table.scan()
         if filter_expr:
             scan = scan.filter(filter_expr)
+            
+        # Apply partition_filter dict if provided
+        from pyiceberg.expressions import EqualTo, And, AlwaysTrue
+        target_partitions: Optional[List[Dict]] = None
+        
+        if partition_filter:
+             # Add filter to scan for analyzing plan_files
+             manual_filter = AlwaysTrue()
+             for col, val in partition_filter.items():
+                 # Handle string/literal conversion automatically by PyIceberg if we pass literals?
+                 # Assuming simple types for now
+                 if manual_filter == AlwaysTrue():
+                     manual_filter = EqualTo(col, val)
+                 else:
+                     manual_filter = And(manual_filter, EqualTo(col, val))
+             scan = scan.filter(manual_filter)
             
         # Analyze partitions
         print("Analyzing table partitions...")
@@ -71,7 +89,6 @@ class CompactionManager:
                 partition_stats[p_key]["bytes"] += f.file_size_in_bytes
         except Exception as e:
             print(f"Warning: Failed to gather stats via plain_files: {e}")
-            # Fallback to simple iteration if plan_files fails (e.g. unpartitioned)
             pass
 
         # If no stats gathered (maybe empty or error), fallback to old logic for unpartitioned
@@ -84,7 +101,13 @@ class CompactionManager:
         skipped_partitions = 0
         
         for p_key, stats in partition_stats.items():
-            if stats["count"] >= min_input_files:
+            should_compact = True
+            
+            # Check min_input_files
+            if stats["count"] < min_input_files:
+                should_compact = False
+            
+            if should_compact:
                 partitions_to_compact.append(stats["partition"])
             else:
                 skipped_partitions += 1
@@ -93,71 +116,97 @@ class CompactionManager:
             return {
                 "rewritten_rows": 0,
                 "strategy": "skipped_all",
-                "message": f"Skipped {skipped_partitions} partitions (min_input_files={min_input_files})"
+                "message": f"Skipped {skipped_partitions} partitions (min_input_files={min_input_files})",
+                "deduplicated": deduplicate
             }
             
         # Perform Compaction on selected partitions
         total_rows = 0
-        from pyiceberg.expressions import EqualTo, And, AlwaysTrue
+        rewritten_partitions = 0
         
         print(f"Compacting {len(partitions_to_compact)} partitions (Skipped {skipped_partitions})...")
         
         for partition_val in partitions_to_compact:
-            # Build Partition Filter
+            # Reconstruct filter from partition values (Record)
+            # We must build a filter that targets THIS partition exactly
             part_filter = AlwaysTrue()
             
-            # Handle unpartitioned or empty partition record
-            if not isinstance(partition_val, dict) and not hasattr(partition_val, "as_dict"):
-                 # Likely unpartitioned if it's an empty record
-                 pass
+            # Check if it's partitioned
+            spec = self.table.spec()
+            if spec.fields:
+                 # It's a Record object, need to iterate fields
+                 # Record doesn't expose strict dict iteration easily but has field names matching spec?
+                 # Actually, partition_val is `Record`. We can try to match fields.
+                 # Safe way: Iterate spec fields and get value from record
+                 for field in spec.fields:
+                     # This is complex because field name in record might differ (transforms)?
+                     # For identity transform, it matches.
+                     # Let's trust the `partitions_to_compact` value or re-derive via scan if needed.
+                     
+                     # Simpler alternative for this loop:
+                     # We have the partition key. We can scan specifically for it.
+                     pass
+
+            # Since constructing the exact filter from Record is hard without deep inspection of spec/transforms
+            # We will use the approach of "Scan table, filter by unique partitions detected in scan"
+            # BUT optimize by filtering the initial scan.
+            # Waait, we loop `partitions_to_compact`.
+            # If we simply use the scan logic from before (iterate unique partitions via Arrow),
+            # we can filter THAT list against our `partitions_to_compact` set/list.
+            # But matching Records is hard.
             
-            # Access fields from Record
-            if hasattr(partition_val, "as_dict"):
-                pass # Use record fields
-            
-            # Reconstruct filter from partition values
-            # This is tricky because `partition_val` is an internal Record.
-            # We need to match it against the partition spec fields.
-            
-            # Simpler approach: If we have the partition values, we can just use them.
-            # But constructing the generic filter is safer via the scan logic used before.
-            # Let's revert to the previous 'unique partition' scan approach BUT filtered by our decision.
+            # Let's stick to the previous robust loop: Scan -> Unique Partitions -> Filter -> Overwrite
+            # But apply our logic (min_files, partition_filter) *inside* that loop.
             pass
 
-        # Re-implementation using the "Iterate Unique Partitions" pattern but with counts
-        # Since we already decided which ones to compact based on plan_files, we can just filter.
-        
+        # Re-implementation using the Robust Loop
         spec = self.table.spec()
         schema = self.table.schema()
         source_col_ids = [f.source_id for f in spec.fields]
         source_col_names = [schema.find_field(id).name for id in source_col_ids]
         
         if not source_col_names:
-            # Unpartitioned
-            arrow_table = scan.to_arrow()
+            # Unpartitioned Logic
+            arrow_table = scan.to_arrow() # already filtered by partition_filter dict if applied to scan
             if arrow_table.num_rows == 0:
                  return {"rewritten_rows": 0}
             
-            # Check file count for unpartitioned? 
-            # We'd need to know file count. 
-            # plan_files gave us that globally.
+            # Check file count logic (global)
             global_count = sum(s["count"] for s in partition_stats.values()) if partition_stats else 0
             if global_count < min_input_files and global_count > 0:
-                return {"rewritten_rows": 0, "message": "Skipped unpartitioned (fewer than min files)"}
+                 return {"rewritten_rows": 0, "message": "Skipped unpartitioned (fewer than min files)"}
+
+            # Deduplication
+            if deduplicate:
+                df = pl.from_arrow(arrow_table)
+                original_rows = df.height
+                df = df.unique()
+                print(f"Deduplicated: {original_rows} -> {df.height} rows")
+                arrow_table = df.to_arrow()
 
             self.table.overwrite(arrow_table)
-            return {"rewritten_rows": arrow_table.num_rows, "strategy": "bin_pack_full"}
+            return {"rewritten_rows": arrow_table.num_rows, "strategy": "bin_pack_full", "deduplicated": deduplicate}
             
-        # Partitioned
+        # Partitioned Logic
         partition_dist_scan = self.table.scan(selected_fields=tuple(source_col_names))
         if filter_expr:
              partition_dist_scan = partition_dist_scan.filter(filter_expr)
+             
+        # Apply partition_filter dict here too
+        if partition_filter:
+             # Re-build filter (same as above)
+             manual_filter = AlwaysTrue()
+             for col, val in partition_filter.items():
+                 if manual_filter == AlwaysTrue():
+                     manual_filter = EqualTo(col, val)
+                 else:
+                     manual_filter = And(manual_filter, EqualTo(col, val))
+             partition_dist_scan = partition_dist_scan.filter(manual_filter)
 
         partitions_df = pl.from_arrow(partition_dist_scan.to_arrow()).unique()
         
-        # Reset skipped count for the actual execution loop
-        skipped_partitions = 0
-        total_rows = 0
+        # Reset counters
+        skipped_partitions_count = 0
         
         for row in partitions_df.to_dicts():
             # Build Partition Filter
@@ -168,35 +217,37 @@ class CompactionManager:
                  else:
                      part_filter = And(part_filter, EqualTo(col, val))
             
-            # Check file count for this partition
-            # We can use our pre-computed stats if we can match the key
-            # Or just do a quick scan since we are processing one by one anyway
-            
-            # Fast scan for file count
-            # This scans manifests, not data, so it's fast
+            # Check file count for this partition via fast scan
+            # (We could check partition_stats if we can match the key, but string rep is tricky)
+            # Robust way: Fast plan_files scan for this partition
             try:
                 part_files_count = 0
                 part_scan = self.table.scan(row_filter=part_filter)
-                # plan_files is a generator
                 for _ in part_scan.plan_files():
                     part_files_count += 1
                     if part_files_count >= min_input_files:
-                        break # Optimization: enough files found
+                        break
                 
                 if part_files_count < min_input_files:
-                    # Skip
-                    skipped_partitions += 1
+                    skipped_partitions_count += 1
                     continue
             except:
-                # Fallback if plan_files fails, just read
                 pass
 
             # Read Partition
             part_arrow = self.table.scan(row_filter=part_filter).to_arrow()
             if part_arrow.num_rows == 0:
                 continue
+            
+            # Deduplication
+            if deduplicate:
+                # Deduplicate within partition
+                df = pl.from_arrow(part_arrow)
+                df = df.unique()
+                part_arrow = df.to_arrow()
                 
             total_rows += part_arrow.num_rows
+            rewritten_partitions += 1
             
             # Rewrite Partition (Safe Overwrite)
             self.table.overwrite(part_arrow, overwrite_filter=part_filter)
@@ -204,7 +255,9 @@ class CompactionManager:
         return {
             "rewritten_rows": total_rows,
             "strategy": "bin_pack_partitioned",
-            "skipped_partitions": skipped_partitions
+            "skipped_partitions": skipped_partitions_count,
+            "rewritten_partitions": rewritten_partitions,
+            "deduplicated": deduplicate
         }
     def sort(
         self,

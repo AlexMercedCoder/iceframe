@@ -1038,10 +1038,14 @@ class IceFrame:
         Args:
             table_name: Name of the table
             target_file_size_mb: Target file size in MB
-            **kwargs: Additional options (e.g., min_input_files)
+            **kwargs: Additional options:
+                      - min_input_files (int): Skip partitions with fewer files (default: 1)
+                      - partition_filter (dict): Target specific partitions (e.g. {'cat': 'A'})
+                      - deduplicate (bool): Remove duplicate rows (default: False)
             
         Example:
-            >>> ice.compact_data_files("my_table", target_file_size_mb=256, min_input_files=5)
+            >>> ice.compact_data_files("my_table", min_input_files=5, deduplicate=True)
+            >>> ice.compact_data_files("my_table", partition_filter={'region': 'us-east'})
         """
         from iceframe.compaction import CompactionManager
         
