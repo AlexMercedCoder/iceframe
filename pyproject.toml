@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iceframe"
-version = "0.8.0"
+version = "0.8.1"
 description = "A DataFrame-like library for working with Apache Iceberg tables"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -140,10 +140,10 @@ iceframe = "iceframe.cli:app"
 iceframe-chat = "iceframe.agent_cli:app"
 
 [project.urls]
-Homepage = "https://github.com/alexmerced/iceframe"
-Documentation = "https://github.com/alexmerced/iceframe/tree/main/docs"
-Repository = "https://github.com/alexmerced/iceframe"
-Issues = "https://github.com/alexmerced/iceframe/issues"
+Homepage = "https://github.com/alexmercedcoder/iceframe"
+Documentation = "https://github.com/alexmercedcoder/iceframe/tree/main/docs"
+Repository = "https://github.com/alexmercedcoder/iceframe"
+Issues = "https://github.com/alexmercedcoder/iceframe/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
