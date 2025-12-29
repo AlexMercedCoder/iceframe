@@ -29,6 +29,15 @@ Combine small data files into larger ones to improve read performance (compactio
 ice.compact_data_files("my_table", target_file_size_mb=512)
 ```
 
+> [!NOTE]
+> **Compaction Implementation Details**
+> IceFrame currently uses a manual compaction strategy (reading data, optionally sorting, and rewriting). 
+> This process typically generates two distinct snapshots in the table history: 
+> 1. A **Delete** snapshot (removing old files)
+> 2. An **Append** snapshot (adding new compacted files)
+> 
+> This is expected behavior until upstream libraries support atomic `rewrite_data_files` operations natively. Functionally, the data is correctly compacted and replaced.
+
 > [!TIP]
 > Run compaction regularly on tables with frequent small updates (streaming ingestion).
 
