@@ -19,8 +19,21 @@ def catalog_config():
 
 @pytest.fixture(scope="session")
 def ice_frame(catalog_config):
-    """Create IceFrame instance for testing"""
-    return IceFrame(catalog_config)
+    """Create IceFrame instance for testing.
+
+    Many of the existing integration-style tests in this tree expect a live
+    REST catalog (typically Dremio Cloud, configured via .env). When that
+    catalog is unreachable — no token, expired token, offline — every test
+    using this fixture would error with ``UnauthorizedError`` / ``ConnectionError``
+    and drown out real signal. We make those tests skip cleanly instead.
+    """
+    try:
+        ice = IceFrame(catalog_config)
+        # Smoke check: hitting list_namespaces forces an actual call to the catalog.
+        ice.list_namespaces()
+    except Exception as e:
+        pytest.skip(f"Catalog at {catalog_config.get('uri')!r} is unreachable: {e}")
+    return ice
 
 
 @pytest.fixture

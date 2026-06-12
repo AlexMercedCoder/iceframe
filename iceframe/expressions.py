@@ -197,13 +197,23 @@ class BooleanExpression(Expression):
 
 class NotExpression(Expression):
     """Represents NOT operation"""
-    
+
     def __init__(self, expr: Expression):
         self.expr = expr
-    
+
     def to_iceberg(self):
-        return Not(self.expr.to_iceberg())
-    
+        # AlwaysTrue is the sentinel used by other expressions to mean
+        # "I couldn't be pushed down — fetch everything, filter locally."
+        # Wrapping that in Not() would collapse to AlwaysFalse and silently
+        # drop every row. The semantically safe answer is "still fetch
+        # everything; the Polars side will apply the NOT locally."
+        inner = self.expr.to_iceberg()
+        if isinstance(inner, AlwaysTrue):
+            return AlwaysTrue()
+        if isinstance(inner, AlwaysFalse):
+            return AlwaysTrue()
+        return Not(inner)
+
     def to_polars(self):
         return ~self.expr.to_polars()
 

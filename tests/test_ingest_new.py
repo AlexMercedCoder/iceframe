@@ -42,7 +42,7 @@ def test_read_sas(mock_polars):
 @pytest.fixture
 def mock_iceframe():
     config = {"uri": "http://mock", "type": "rest", "token": "dummy"}
-    with patch('iceframe.core.CatalogPool'), \
+    with patch('iceframe.core.load_catalog'), \
          patch('iceframe.core.TableOperations'), \
          patch('iceframe.core.DataExporter'):
         ice = IceFrame(config)

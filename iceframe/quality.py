@@ -61,82 +61,146 @@ class DataValidator:
                 return False
         return True
         
-    def check_constraints(self, data: Union[pl.DataFrame, Any, str], constraints: Dict[str, str]) -> bool:
+    def check_constraints(
+        self,
+        data: Union[pl.DataFrame, Any, str],
+        constraints: Union[Dict[str, str], List[str], List[pl.Expr]],
+    ) -> bool:
         """
-        Check if data satisfies SQL-like constraints.
-        
+        Check whether every row satisfies the given constraints.
+
         Args:
-            data: Polars DataFrame, QueryBuilder, or SQL string to check
-            constraints: Dictionary mapping column names to constraint expressions
-                        (e.g., {"age": "age > 0", "status": "status != 'deleted'"})
-                        Note: The key is just for reference/error reporting, the value is the full expression.
-                        Actually, let's make it a list of expressions or a dict where key is description.
-                        Let's stick to dict of {description: expression} or just list of expressions.
-                        
-                        Simpler: Dict[str, str] where key is column and value is condition like "> 0".
-                        Or better: List of SQL-like expressions supported by Polars or simple eval.
-                        
-                        Let's use Polars expression strings if possible, or just python lambda?
-                        String expressions are parsed by Polars in some contexts (SQLContext), but here we have a DataFrame.
-                        
-                        Let's support simple Polars expression strings if we can, or just use `pl.Expr`.
-                        But to keep it simple for users, maybe just accept a list of filter expressions as strings 
-                        that we can pass to `filter()` and check if count matches.
-                        
+            data: A Polars DataFrame, QueryBuilder, or SQL string.
+            constraints: One of:
+
+                * A dict mapping a description to a Polars SQL boolean
+                  expression, e.g. ``{"age_positive": "age > 0",
+                  "not_deleted": "status != 'deleted'"}``.
+                * A list of Polars SQL boolean expression strings, e.g.
+                  ``["age > 0", "status != 'deleted'"]``.
+                * A list of ``pl.Expr`` boolean expressions, e.g.
+                  ``[pl.col("age") > 0]``.
+
         Returns:
-            True if all rows satisfy all constraints
+            ``True`` only if every constraint holds for every row.
         """
-        # This is a bit tricky without a full SQL parser.
-        # Let's support a simplified approach:
-        # constraints = ["age > 0", "status != 'deleted'"]
-        # We can try to use `iceframe.expressions` or just rely on Polars SQL context?
-        # Or just let user pass a function?
-        
-        # For now, let's implement a simple check using Polars SQLContext if available, 
-        # or just iterate and check.
-        
-        # Actually, let's use the QueryBuilder's expression system if possible, 
-        # or just simple Polars expressions.
-        
-        # Let's change the API to accept a list of Polars expressions or a custom validation function.
-        # But for "string" constraints, we might need `pl.sql_expr(constraint)` if available.
-        
-        # Let's stick to a simple implementation:
-        # check_constraints(df, [pl.col("age") > 0])
-        # Placeholder implementation
+        df = self._resolve_data(data)
+
+        if isinstance(constraints, dict):
+            iterable = list(constraints.values())
+        else:
+            iterable = list(constraints)
+
+        for constraint in iterable:
+            if isinstance(constraint, pl.Expr):
+                expr = constraint
+            elif isinstance(constraint, str):
+                expr = pl.sql_expr(constraint)
+            else:
+                raise TypeError(
+                    f"Unsupported constraint type: {type(constraint).__name__}. "
+                    "Expected str or pl.Expr."
+                )
+            # A constraint holds when every row satisfies it; equivalently, no
+            # row matches the negation.
+            if df.filter(~expr).height > 0:
+                return False
         return True
 
     def validate(self, data: Union[pl.DataFrame, Any, str], checks: List[Any]) -> Dict[str, Any]:
         """
         Run a suite of validation checks.
-        
+
         Args:
-            data: Polars DataFrame, QueryBuilder, or SQL string to validate
-            checks: List of checks (can be custom functions or Polars expressions)
-            
+            data: Polars DataFrame, QueryBuilder, or SQL string to validate.
+            checks: List of checks. Each check may be:
+
+                * a ``pl.Expr`` — the constraint must hold for every row;
+                * a string — a Polars SQL boolean expression that must hold;
+                * a dict — interpreted as a single constraint of the form
+                  ``{"type": "not_null"|"unique"|"between"|"in_set"|"regex", ...}``
+                  (see below for required keys);
+                * a callable ``f(df) -> bool``.
+
+        Dict-style constraint shapes:
+            ``{"type": "not_null", "column": "id"}``
+            ``{"type": "unique", "column": "id"}``
+            ``{"type": "between", "column": "age", "min": 0, "max": 150}``
+            ``{"type": "in_set", "column": "status", "values": ["a", "b"]}``
+            ``{"type": "regex", "column": "email", "pattern": ".+@.+"}``
+
         Returns:
-            Dictionary with results
+            ``{"passed": bool, "details": [str, ...]}``
         """
         df = self._resolve_data(data)
-        results = {"passed": True, "details": []}
+        results: Dict[str, Any] = {"passed": True, "details": []}
+
+        def _fail(msg: str) -> None:
+            results["passed"] = False
+            results["details"].append(msg)
+
         for check in checks:
-            # If check is a Polars expression, we expect it to evaluate to True for all rows
             if isinstance(check, pl.Expr):
-                # Filter where NOT check
                 failed_rows = df.filter(~check)
                 if failed_rows.height > 0:
-                    results["passed"] = False
-                    results["details"].append(f"Constraint failed: {check} (Failed rows: {failed_rows.height})")
+                    _fail(f"Constraint failed: {check} (failed rows: {failed_rows.height})")
+
+            elif isinstance(check, str):
+                try:
+                    expr = pl.sql_expr(check)
+                    failed_rows = df.filter(~expr)
+                    if failed_rows.height > 0:
+                        _fail(f"Constraint failed: {check!r} (failed rows: {failed_rows.height})")
+                except Exception as e:
+                    _fail(f"Could not evaluate constraint {check!r}: {e}")
+
+            elif isinstance(check, dict):
+                try:
+                    if not self._check_dict_constraint(df, check):
+                        _fail(f"Dict constraint failed: {check}")
+                except Exception as e:
+                    _fail(f"Dict constraint raised: {check} -> {e}")
+
             elif callable(check):
                 try:
                     if not check(df):
-                        results["passed"] = False
-                        results["details"].append(f"Custom check failed: {check.__name__}")
+                        _fail(f"Custom check failed: {getattr(check, '__name__', check)}")
                 except Exception as e:
-                    results["passed"] = False
-                    results["details"].append(f"Check raised exception: {e}")
-                    
+                    _fail(f"Check raised exception: {e}")
+
+            else:
+                _fail(f"Unsupported check type: {type(check).__name__}")
+
         return results
+
+    def _check_dict_constraint(self, df: pl.DataFrame, c: Dict[str, Any]) -> bool:
+        """Evaluate a single dict-shaped constraint. Returns True iff it holds."""
+        ctype = c.get("type")
+        col = c.get("column")
+        if ctype is None:
+            raise ValueError("Dict constraint requires a 'type' key")
+        if col is None and ctype != "row_count":
+            raise ValueError(f"Dict constraint of type {ctype!r} requires a 'column' key")
+        if col is not None and col not in df.columns:
+            raise ValueError(f"Column {col!r} not found in DataFrame")
+
+        if ctype == "not_null":
+            return df[col].null_count() == 0
+        if ctype == "unique":
+            return df[col].n_unique() == df.height
+        if ctype == "between":
+            lo, hi = c["min"], c["max"]
+            invalid = df.filter((pl.col(col) < lo) | (pl.col(col) > hi))
+            return invalid.height == 0
+        if ctype == "in_set":
+            invalid = df.filter(~pl.col(col).is_in(c["values"]))
+            return invalid.height == 0
+        if ctype == "regex":
+            invalid = df.filter(~pl.col(col).str.contains(c["pattern"]))
+            return invalid.height == 0
+        if ctype == "row_count":
+            return c.get("min", 0) <= df.height <= c.get("max", float("inf"))
+        raise ValueError(f"Unknown constraint type: {ctype!r}")
 
     def expect_column_values_to_be_unique(self, data: Union[pl.DataFrame, Any, str], column: str) -> bool:
         """Expect column values to be unique."""

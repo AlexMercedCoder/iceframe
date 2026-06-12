@@ -15,6 +15,30 @@ from pyiceberg.types import NestedField, StringType, IntegerType, LongType, Floa
 from iceframe.utils import normalize_table_identifier
 
 
+def _resolve_snapshot_for_timestamp(table: Table, as_of_timestamp_ms: int) -> Optional[int]:
+    """
+    Resolve a millisecond-epoch timestamp to the snapshot id that was current
+    at that point in time (the most recent snapshot with
+    ``timestamp_ms <= as_of_timestamp_ms``).
+
+    Returns ``None`` if no such snapshot exists (i.e. the timestamp predates the
+    table's first commit).
+    """
+    candidate_id: Optional[int] = None
+    candidate_ts: int = -1
+    try:
+        for snap in table.snapshots():
+            ts = getattr(snap, "timestamp_ms", None)
+            if ts is None:
+                continue
+            if ts <= as_of_timestamp_ms and ts > candidate_ts:
+                candidate_ts = ts
+                candidate_id = snap.snapshot_id
+    except Exception:
+        return None
+    return candidate_id
+
+
 class TableOperations:
     """Handle table CRUD operations"""
     
@@ -74,7 +98,14 @@ class TableOperations:
         return fields
     
     def _pyarrow_to_iceberg_type(self, pa_type):
-        """Convert PyArrow type to PyIceberg type"""
+        """
+        Convert PyArrow type to PyIceberg type.
+
+        Unmapped types (decimal, list, struct, binary, time, ...) emit a
+        ``UserWarning`` and fall back to ``StringType`` — previously the fallback
+        was silent, which produced schema-corruption-style bugs that only showed
+        up at read time. Loud is safer.
+        """
         if pa.types.is_string(pa_type) or pa.types.is_large_string(pa_type):
             return StringType()
         elif pa.types.is_int32(pa_type):
@@ -92,11 +123,22 @@ class TableOperations:
         elif pa.types.is_date(pa_type):
             return DateType()
         else:
-            # Default to string for unsupported types
+            import warnings
+            warnings.warn(
+                f"PyArrow type {pa_type!r} has no direct Iceberg mapping in IceFrame; "
+                "falling back to StringType. Define the schema explicitly to silence "
+                "this warning.",
+                UserWarning,
+                stacklevel=3,
+            )
             return StringType()
-    
+
     def _string_to_iceberg_type(self, type_str: str):
-        """Convert string type name to PyIceberg type"""
+        """Convert string type name to PyIceberg type.
+
+        Unknown names emit a ``UserWarning`` before falling back to
+        ``StringType`` — silently coercing was hiding typos like ``"int32"``
+        and producing the wrong Iceberg schema."""
         type_map = {
             "string": StringType(),
             "int": IntegerType(),
@@ -107,7 +149,17 @@ class TableOperations:
             "timestamp": TimestampType(),
             "date": DateType(),
         }
-        return type_map.get(type_str.lower(), StringType())
+        key = type_str.lower()
+        if key not in type_map:
+            import warnings
+            warnings.warn(
+                f"Unknown type string {type_str!r}; falling back to StringType. "
+                f"Known types: {sorted(type_map)}.",
+                UserWarning,
+                stacklevel=3,
+            )
+            return StringType()
+        return type_map[key]
     
     def create_table(
         self,
@@ -255,23 +307,14 @@ class TableOperations:
              else:
                  create_kwargs["sort_order"] = sort_order
         
-        # Create the table
-        table_obj = self.catalog.create_table(**create_kwargs)
-        
-        # If input was a DataFrame or Table, write the data
-        try:
-             initial_data = None
-             if isinstance(schema, pl.DataFrame):
-                 initial_data = schema.to_arrow()
-             elif isinstance(schema, pa.Table):
-                 initial_data = schema
-             
-             if initial_data is not None and initial_data.num_rows > 0:
-                 table_obj.append(initial_data)
-        except Exception as e:
-             print(f"Warning: Failed to write initial data to table {table_name}: {e}")
-        
-        return table_obj
+        # Create the table.
+        # NOTE: We do NOT auto-append data here even if the caller passed a DataFrame /
+        # PyArrow Table as the `schema` argument. The schema is inferred and that's it.
+        # Doing the append here as well caused a long-standing double-write bug because
+        # every `create_table_from_*` helper does `create_table(schema=df)` *and then*
+        # calls `append_to_table(...)`, which appended the data a second time.
+        # Callers that want the data written should call `append_to_table` themselves.
+        return self.catalog.create_table(**create_kwargs)
 
     
     def get_table(self, table_name: str) -> Table:
@@ -290,62 +333,81 @@ class TableOperations:
     ) -> pl.DataFrame:
         """
         Read data from a table.
-        
+
         Args:
             table_name: Name of the table
             columns: Optional column selection
-            filter_expr: Optional filter expression (string for local filter, Expression object for pushdown)
+            filter_expr: Optional filter expression. Accepts:
+                * a string — interpreted as a local Polars SQL filter (NOT pushed
+                  to Iceberg). When provided, `limit` is applied AFTER the filter.
+                * an IceFrame ``Expression`` — translated to a PyIceberg predicate
+                  for pushdown. Expressions that cannot be pushed down fall back
+                  to local Polars evaluation; `limit` is then applied after.
             limit: Optional row limit
             snapshot_id: Optional snapshot ID for time travel
-            as_of_timestamp: Optional timestamp for time travel
-            
+            as_of_timestamp: Optional millisecond epoch timestamp for time travel.
+                Resolved to the most recent snapshot at or before the timestamp.
+
         Returns:
             Polars DataFrame
         """
         table = self.get_table(table_name)
-        
-        # Determine row_filter for PyIceberg (pushdown)
+
         from pyiceberg.expressions import AlwaysTrue
-        
-        # Check if filter_expr is an IceFrame Expression (for pushdown)
-        # We need to check class name or attribute since we can't easily import Expression here due to circular imports?
-        # Or just check if it has to_iceberg method
+
         iceberg_filter = AlwaysTrue()
-        polars_filter_str = None
-        
+        polars_filter_str: Optional[str] = None
+        polars_local_expr = None  # an IceFrame Expression that didn't push down
+
         if filter_expr is not None:
             if hasattr(filter_expr, "to_iceberg"):
-                # It's an Expression object -> Pushdown
-                iceberg_filter = filter_expr.to_iceberg()
+                pushed = filter_expr.to_iceberg()
+                if isinstance(pushed, AlwaysTrue):
+                    # Couldn't be pushed down — keep the original Expression and
+                    # evaluate it locally on the scan result. Without this we'd
+                    # silently drop the predicate.
+                    polars_local_expr = filter_expr
+                else:
+                    iceberg_filter = pushed
             elif isinstance(filter_expr, str):
-                # It's a string -> Local filter
                 polars_filter_str = filter_expr
-        
-        # Start with a scan
+
+        # Resolve as_of_timestamp -> snapshot_id (PyIceberg's scan() takes
+        # snapshot_id; older code attempted scan.use_ref(str(ms)) which is wrong
+        # — use_ref takes a branch/tag name. We resolve via the metadata log.)
+        if as_of_timestamp is not None and snapshot_id is None:
+            snapshot_id = _resolve_snapshot_for_timestamp(table, as_of_timestamp)
+            if snapshot_id is None:
+                raise ValueError(
+                    f"No snapshot at or before timestamp {as_of_timestamp} (ms)"
+                )
+
+        # Only push `limit` into the scan when there is no local filter to apply
+        # afterwards. Otherwise the scan would cap rows BEFORE the local filter
+        # runs and we'd return fewer than `limit` matching rows.
+        has_local_filter = polars_filter_str is not None or polars_local_expr is not None
+        scan_limit = None if has_local_filter else limit
+
         scan = table.scan(
             row_filter=iceberg_filter,
             selected_fields=tuple(columns) if columns else ("*",),
-            limit=limit, # Pass limit to scan if supported by PyIceberg (it is in newer versions)
+            limit=scan_limit,
             snapshot_id=snapshot_id,
         )
-        
-        # For older PyIceberg versions that don't support limit in scan(), we handle it later
-        
-        if as_of_timestamp:
-             scan = scan.use_ref(str(as_of_timestamp))
 
-        # Execute scan and convert to Polars
         arrow_table = scan.to_arrow()
         df = pl.from_arrow(arrow_table)
-        
-        # Apply local string filter if provided
+
         if polars_filter_str:
             df = df.filter(pl.sql_expr(polars_filter_str))
-        
-        # Apply limit locally (if not pushed down or for extra safety)
+        if polars_local_expr is not None:
+            df = df.filter(polars_local_expr.to_polars())
+
+        # Final cap (also covers the case where the scan returned more rows than
+        # `limit` due to pushdown granularity).
         if limit and df.height > limit:
             df = df.head(limit)
-        
+
         return df
     
     def scan_batches(
@@ -375,24 +437,31 @@ class TableOperations:
         """
         table = self.get_table(table_name)
         from pyiceberg.expressions import AlwaysTrue
-        
-        # Handle filter
+
         iceberg_filter = AlwaysTrue()
         if filter_expr is not None and hasattr(filter_expr, "to_iceberg"):
-             iceberg_filter = filter_expr.to_iceberg()
-        
-        # Build scan arguments, filtering out None values to avoid issues with some PyIceberg versions
-        scan_args = {
-            "row_filter": iceberg_filter,
-            "selected_fields": tuple(columns) if columns else ("*",),
-            "limit": limit,
-            "snapshot_id": snapshot_id,
-        }
-        if as_of_timestamp is not None:
-            scan_args["as_of_timestamp"] = as_of_timestamp
-            
-        scan = table.scan(**scan_args)
-        
+            pushed = filter_expr.to_iceberg()
+            # Non-pushable expressions stay as AlwaysTrue at this layer; the
+            # caller will need to filter the resulting batches if they care.
+            if not isinstance(pushed, AlwaysTrue):
+                iceberg_filter = pushed
+
+        # Resolve as_of_timestamp -> snapshot_id (PyIceberg's scan() does NOT
+        # accept an `as_of_timestamp` kwarg; passing it raises).
+        if as_of_timestamp is not None and snapshot_id is None:
+            snapshot_id = _resolve_snapshot_for_timestamp(table, as_of_timestamp)
+            if snapshot_id is None:
+                raise ValueError(
+                    f"No snapshot at or before timestamp {as_of_timestamp} (ms)"
+                )
+
+        scan = table.scan(
+            row_filter=iceberg_filter,
+            selected_fields=tuple(columns) if columns else ("*",),
+            limit=limit,
+            snapshot_id=snapshot_id,
+        )
+
         # Note: PyIceberg's to_arrow_batch_reader() returns a pa.RecordBatchReader
         # which is an iterator of RecordBatches
         return scan.to_arrow_batch_reader()
@@ -487,17 +556,30 @@ class TableOperations:
         self.catalog.drop_table(f"{namespace}.{table}")
     
     def list_tables(self, namespace: str = "default") -> List[str]:
-        """List all tables in a namespace"""
+        """
+        List all tables in a namespace.
+
+        Returns an empty list if the namespace does not exist. Connection or
+        permission errors are surfaced rather than silently masked as empty —
+        catching them here used to hide real catalog problems behind a
+        confusingly empty response.
+        """
+        from pyiceberg.exceptions import NoSuchNamespaceError
         try:
             tables = self.catalog.list_tables(namespace)
-            return [str(t) for t in tables]
-        except Exception:
+        except NoSuchNamespaceError:
             return []
-    
+        return [str(t) for t in tables]
+
     def table_exists(self, table_name: str) -> bool:
-        """Check if a table exists"""
+        """
+        Check if a table exists. Returns False only when the catalog reports the
+        table or namespace is missing; other errors (auth, network, ...) bubble
+        up so they are visible to the caller.
+        """
+        from pyiceberg.exceptions import NoSuchTableError, NoSuchNamespaceError
         try:
             self.get_table(table_name)
             return True
-        except Exception:
+        except (NoSuchTableError, NoSuchNamespaceError):
             return False

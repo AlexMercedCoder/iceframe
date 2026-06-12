@@ -117,7 +117,8 @@ class TestIceFrameIngest(unittest.TestCase):
     
     def setUp(self):
         self.config = {"uri": "http://mock", "type": "rest", "token": "dummy"}
-        with patch("iceframe.core.CatalogPool"), \
+        # 0.12 replaced CatalogPool with a direct load_catalog call.
+        with patch("iceframe.core.load_catalog"), \
              patch("iceframe.core.TableOperations"):
             self.ice = IceFrame(self.config)
             self.ice.create_table = MagicMock()

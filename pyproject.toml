@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iceframe"
-version = "0.10.0"
+version = "0.12.0"
 description = "A DataFrame-like library for working with Apache Iceberg tables"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,11 +26,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "pyiceberg>=0.6.0",
+    "pyiceberg>=0.11.0",
     "pyarrow>=14.0.0",
     "polars>=0.19.0",
     "python-dotenv>=1.0.0",
-    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -119,12 +118,13 @@ sql = [
 ]
 xml = [
     "lxml>=4.9.0",
+    "pandas>=2.0.0",
 ]
-stats = ["pyreadstat"]
+stats = ["pyreadstat", "pandas>=2.0.0"]
 api = ["requests"]
 hf = ["datasets"]
-html = ["lxml", "html5lib", "beautifulsoup4"]
-clipboard = ["pyperclip"]
+html = ["lxml", "html5lib", "beautifulsoup4", "pandas>=2.0.0"]
+clipboard = ["pyperclip", "pandas>=2.0.0"]
 datafusion = [
     "datafusion>=35.0.0",
 ]

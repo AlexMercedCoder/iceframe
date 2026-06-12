@@ -23,15 +23,26 @@ class QueryCache:
         self._cache: Dict[str, Dict[str, Any]] = {}
         self.max_size = max_size
         
+    @staticmethod
+    def _stable(obj: Any) -> Any:
+        """Coerce values into something json.dumps can hash deterministically."""
+        if isinstance(obj, (str, int, float, bool)) or obj is None:
+            return obj
+        if isinstance(obj, dict):
+            return {str(k): QueryCache._stable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple, set)):
+            return [QueryCache._stable(v) for v in obj]
+        return repr(obj)
+
     def _generate_key(self, table_name: str, query_params: Dict[str, Any]) -> str:
         """Generate cache key from query parameters"""
         key_data = {
             "table": table_name,
-            "params": query_params
+            "params": self._stable(query_params),
         }
         key_str = json.dumps(key_data, sort_keys=True)
         return hashlib.md5(key_str.encode()).hexdigest()
-        
+
     def get(self, table_name: str, query_params: Dict[str, Any]) -> Optional[pl.DataFrame]:
         """
         Get cached result if available and not expired.
@@ -73,32 +84,27 @@ class QueryCache:
         if len(self._cache) >= self.max_size and key not in self._cache:
             oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k]["created_at"])
             del self._cache[oldest_key]
-        
+
         expires_at = time.time() + ttl if ttl else None
-        
+
         self._cache[key] = {
+            "table": table_name,
             "data": data,
             "created_at": time.time(),
-            "expires_at": expires_at
+            "expires_at": expires_at,
         }
-        
+
     def invalidate(self, table_name: str):
         """
-        Invalidate all cached queries for a table.
-        
-        Args:
-            table_name: Name of the table
+        Invalidate cached queries for the given table only.
+
+        Previously ignored the argument and dropped the entire cache — that
+        defeated the point of per-table invalidation. We now tag each entry
+        with its source table and remove only matching keys.
         """
-        keys_to_remove = []
-        for key, entry in self._cache.items():
-            # Check if this cache entry is for the specified table
-            # We need to reconstruct the table name from the key
-            # For simplicity, we'll clear all cache (could be optimized)
-            keys_to_remove.append(key)
-            
+        keys_to_remove = [k for k, e in self._cache.items() if e.get("table") == table_name]
         for key in keys_to_remove:
-            if key in self._cache:
-                del self._cache[key]
+            del self._cache[key]
                 
     def clear(self):
         """Clear all cached queries"""
@@ -122,68 +128,94 @@ class QueryCache:
 
 class DiskCache(QueryCache):
     """
-    Disk-based cache using diskcache library.
+    Disk-based cache that stores parquet files under ``cache_dir`` and tracks
+    them via the ``diskcache`` index.
+
+    Previous version (a) skipped ``super().__init__``, so inherited methods
+    like ``invalidate``/``stats`` referenced a missing ``self._cache``; and
+    (b) wrote parquet to the OS tempdir via ``NamedTemporaryFile(delete=False)``
+    and never deleted those files on eviction/overwrite/expiry — an unbounded
+    disk leak that ignored ``cache_dir`` entirely.
     """
-    
+
     def __init__(self, cache_dir: str = ".iceframe_cache", max_size_gb: float = 1.0):
-        """
-        Initialize disk cache.
-        
-        Args:
-            cache_dir: Directory for cache files
-            max_size_gb: Maximum cache size in GB
-        """
+        super().__init__(max_size=10**9)  # disk capacity bound is enforced by diskcache
         try:
-            import diskcache
-            self.cache = diskcache.Cache(cache_dir, size_limit=int(max_size_gb * 1024**3))
+            import diskcache  # noqa: F401
         except ImportError:
-            raise ImportError("diskcache required for disk caching. Install with: pip install 'iceframe[cache]'")
-            
-    def _generate_key(self, table_name: str, query_params: Dict[str, Any]) -> str:
-        """Generate cache key"""
-        key_data = {
-            "table": table_name,
-            "params": query_params
-        }
-        key_str = json.dumps(key_data, sort_keys=True)
-        return hashlib.md5(key_str.encode()).hexdigest()
-        
+            raise ImportError(
+                "diskcache required for disk caching. Install with: pip install 'iceframe[cache]'"
+            )
+        import os
+        os.makedirs(cache_dir, exist_ok=True)
+        self.cache_dir = os.path.abspath(cache_dir)
+        # Parquet payloads live under <cache_dir>/data/<key>.parquet; the
+        # diskcache index in <cache_dir>/index/ holds metadata pointers.
+        self._data_dir = os.path.join(self.cache_dir, "data")
+        os.makedirs(self._data_dir, exist_ok=True)
+        import diskcache
+        self.cache = diskcache.Cache(
+            os.path.join(self.cache_dir, "index"),
+            size_limit=int(max_size_gb * 1024**3),
+        )
+
+    def _payload_path(self, key: str) -> str:
+        import os
+        return os.path.join(self._data_dir, f"{key}.parquet")
+
+    def _delete_payload(self, key: str) -> None:
+        import os
+        path = self._payload_path(key)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            print(f"Warning: could not delete cache payload {path}: {e}")
+
     def get(self, table_name: str, query_params: Dict[str, Any]) -> Optional[pl.DataFrame]:
-        """Get cached result"""
         key = self._generate_key(table_name, query_params)
-        
         entry = self.cache.get(key)
         if entry is None:
             return None
-            
-        # Check TTL
-        if entry["expires_at"] and time.time() > entry["expires_at"]:
-            del self.cache[key]
+        if entry.get("expires_at") and time.time() > entry["expires_at"]:
+            self.cache.pop(key, None)
+            self._delete_payload(key)
             return None
-            
-        # Deserialize DataFrame
         return pl.read_parquet(entry["data_path"])
-        
+
     def put(self, table_name: str, query_params: Dict[str, Any], data: pl.DataFrame, ttl: Optional[int] = None):
-        """Cache query result to disk"""
-        import tempfile
-        import os
-        
         key = self._generate_key(table_name, query_params)
-        
-        # Write DataFrame to temp parquet file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as f:
-            data.write_parquet(f.name)
-            data_path = f.name
-            
+        # If a previous payload existed at this key, delete it before overwrite.
+        old = self.cache.get(key)
+        if old is not None:
+            self._delete_payload(key)
+
+        data_path = self._payload_path(key)
+        data.write_parquet(data_path)
+
         expires_at = time.time() + ttl if ttl else None
-        
         self.cache.set(key, {
+            "table": table_name,
             "data_path": data_path,
             "created_at": time.time(),
-            "expires_at": expires_at
+            "expires_at": expires_at,
         })
-        
+
+    def invalidate(self, table_name: str):
+        for key in list(self.cache):
+            entry = self.cache.get(key)
+            if entry is not None and entry.get("table") == table_name:
+                self.cache.pop(key, None)
+                self._delete_payload(key)
+
     def clear(self):
-        """Clear disk cache"""
+        for key in list(self.cache):
+            self._delete_payload(key)
         self.cache.clear()
+
+    def stats(self) -> Dict[str, Any]:
+        return {
+            "size": len(self.cache),
+            "cache_dir": self.cache_dir,
+        }

@@ -174,15 +174,24 @@ def read_csv(path: str, **kwargs) -> pl.DataFrame:
 def read_json(path: str, **kwargs) -> pl.DataFrame:
     """
     Read a JSON file into a Polars DataFrame.
-    
+
     Args:
         path: Path to the JSON file
         **kwargs: Additional arguments passed to pl.read_json
-        
+
     Returns:
         Polars DataFrame
     """
     return pl.read_json(path, **kwargs)
+
+
+def read_ndjson(path: str, **kwargs) -> pl.DataFrame:
+    """
+    Read a newline-delimited JSON file (one JSON object per line) into a
+    Polars DataFrame. ``pl.read_json`` does NOT parse NDJSON — passing an
+    NDJSON file there raises. Use this for ``.ndjson`` / ``.jsonl`` inputs.
+    """
+    return pl.read_ndjson(path, **kwargs)
 
 def read_parquet(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -438,28 +447,51 @@ def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
     """
     import glob
     import os
-    
-    files = glob.glob(os.path.join(path, pattern))
+
+    files = sorted(glob.glob(os.path.join(path, pattern)))
     if not files:
         raise ValueError(f"No files found in {path} matching {pattern}")
-        
-    dfs = []
+
+    readers = {
+        "csv": read_csv,
+        "json": read_json,
+        "ndjson": read_ndjson,
+        "jsonl": read_ndjson,
+        "parquet": read_parquet,
+        "ipc": read_ipc,
+        "arrow": read_ipc,
+        "feather": read_ipc,
+        "avro": read_avro,
+        "orc": read_orc,
+        "xls": read_excel,
+        "xlsx": read_excel,
+    }
+
+    formats_seen: set = set()
+    dfs: list = []
     for file_path in files:
-        # Infer format from extension
         _, ext = os.path.splitext(file_path)
-        fmt = ext.lower().lstrip('.')
-        
-        if fmt == 'csv':
-            dfs.append(read_csv(file_path, **kwargs))
-        elif fmt == 'json':
-            dfs.append(read_json(file_path, **kwargs))
-        elif fmt == 'parquet':
-            dfs.append(read_parquet(file_path, **kwargs))
-        elif fmt in ['xls', 'xlsx']:
-            dfs.append(read_excel(file_path, **kwargs))
-        # Add more as needed
-        
+        fmt = ext.lower().lstrip(".")
+        reader = readers.get(fmt)
+        if reader is None:
+            # Unknown extensions are skipped rather than crashing the whole
+            # folder read — but be loud about it so users notice.
+            print(f"read_folder: skipping {file_path} (unsupported extension {ext!r})")
+            continue
+        formats_seen.add(fmt)
+        dfs.append(reader(file_path, **kwargs))
+
     if not dfs:
         raise ValueError("No supported files found")
-        
-    return pl.concat(dfs)
+
+    if len({readers[f] for f in formats_seen}) > 1:
+        raise ValueError(
+            f"read_folder mixed file types {sorted(formats_seen)} — pl.concat "
+            "requires matching schemas. Use a stricter pattern or read each "
+            "format separately."
+        )
+
+    # ``vertical_relaxed`` lets concat tolerate dtype widening between files
+    # of the same format (e.g. one CSV inferred Int32, another Int64) rather
+    # than raising on the first mismatch.
+    return pl.concat(dfs, how="vertical_relaxed")

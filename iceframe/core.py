@@ -20,7 +20,6 @@ from iceframe.utils import validate_catalog_config, normalize_table_identifier, 
 from iceframe.operations import TableOperations
 
 from iceframe.export import DataExporter
-from iceframe.pool import CatalogPool
 from iceframe.parallel import ParallelExecutor
 from iceframe.memory import MemoryManager
 
@@ -28,35 +27,46 @@ from iceframe.memory import MemoryManager
 class IceFrame:
     """
     Main class for interacting with Apache Iceberg tables.
-    
+
     Provides a DataFrame-like API for CRUD operations, maintenance, and exports.
     """
-    
-    def __init__(self, catalog_config: Dict[str, Any], pool_size: int = 5):
+
+    def __init__(self, catalog_config: Dict[str, Any], pool_size: Optional[int] = None):
         """
         Initialize IceFrame with catalog configuration.
-        
+
         Args:
             catalog_config: Dictionary containing catalog configuration.
                            Must include 'uri' and 'type' keys.
-            pool_size: Size of connection pool (default: 5)
-                           
+            pool_size: Deprecated and ignored. Older versions advertised a
+                catalog connection pool here, but each IceFrame held exactly
+                one connection for its lifetime and never released or rotated
+                pool entries — so the pool simply burned ``pool_size``
+                connections at startup (costly for REST / Glue) and left them
+                idle. The parameter is kept only to avoid breaking constructor
+                calls; a deprecation warning is emitted when it's set.
+
         Example:
             >>> config = {
             ...     "uri": "http://localhost:8181",
             ...     "type": "rest",
-            ...     "warehouse": "s3://my-bucket/warehouse"
+            ...     "warehouse": "s3://my-bucket/warehouse",
             ... }
             >>> ice = IceFrame(config)
         """
         validate_catalog_config(catalog_config)
         self.catalog_config = catalog_config
-        
-        # Initialize connection pool
-        self._pool = CatalogPool(catalog_config, pool_size=pool_size)
-        self.catalog = self._pool.get_connection()
-        
 
+        if pool_size is not None:
+            import warnings
+            warnings.warn(
+                "IceFrame(pool_size=...) is deprecated and ignored; IceFrame "
+                "now holds a single direct catalog connection.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        self.catalog = load_catalog("iceframe", **catalog_config)
         self._operations = TableOperations(self.catalog)
         self._exporter = DataExporter()
 
@@ -413,8 +423,6 @@ class IceFrame:
         self.append_to_table(table_name, df)
         return table
 
-        return table
-
     def create_table_from_sql(
         self,
         table_name: str,
@@ -680,8 +688,12 @@ class IceFrame:
             
         if format == 'csv':
             df = ingest.read_csv(path, **kwargs)
-        elif format in ['json', 'ndjson']:
+        elif format == 'json':
             df = ingest.read_json(path, **kwargs)
+        elif format in ['ndjson', 'jsonl']:
+            # pl.read_json can't parse newline-delimited JSON; route to
+            # pl.read_ndjson via the dedicated helper.
+            df = ingest.read_ndjson(path, **kwargs)
         elif format == 'parquet':
             df = ingest.read_parquet(path, **kwargs)
         elif format in ['ipc', 'arrow', 'feather']:
@@ -1239,9 +1251,13 @@ class IceFrame:
     
     @property
     def validator(self):
-        """Access data validator"""
+        """
+        Access the data validator. Same instance shape as ``ice.quality`` —
+        both are :class:`DataValidator` bound to this IceFrame, so SQL-string
+        inputs can be resolved through ``query_datafusion``.
+        """
         from iceframe.quality import DataValidator
-        return DataValidator()
+        return DataValidator(self)
 
     # Incremental Processing
     
@@ -1322,9 +1338,9 @@ class IceFrame:
             Dictionary with validation results
         """
         from iceframe.quality import DataValidator
-        
+
         df = self.read_table(table_name)
-        validator = DataValidator()
+        validator = DataValidator(self)
         return validator.validate(df, constraints)
 
     # Scalability Features

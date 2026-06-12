@@ -63,5 +63,7 @@ iceframe_docs.pdf
 
 # Generated Test Artifacts
 test_warehouse/
+test_warehouse_*/
 test_warehouse_maint/
 tmp_catalog_repro/
+.pytest_cache/

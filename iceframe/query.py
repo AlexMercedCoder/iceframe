@@ -11,6 +11,24 @@ from pyiceberg.expressions import AlwaysTrue
 
 from iceframe.expressions import Expression, Column, LiteralValue
 from iceframe.operations import TableOperations
+from iceframe.cache import QueryCache
+
+
+# Process-wide cache used by ``QueryBuilder.cache(...)``. Bounded so it can't
+# grow unbounded across long-lived sessions; callers that want disk caching
+# can substitute :class:`iceframe.cache.DiskCache` via ``set_query_cache``.
+_QUERY_CACHE: QueryCache = QueryCache(max_size=128)
+
+
+def set_query_cache(cache: QueryCache) -> None:
+    """Replace the process-wide query cache (e.g. install a DiskCache)."""
+    global _QUERY_CACHE
+    _QUERY_CACHE = cache
+
+
+def get_query_cache() -> QueryCache:
+    """Return the process-wide query cache used by QueryBuilder.cache(ttl)."""
+    return _QUERY_CACHE
 
 
 class QueryBuilder:
@@ -110,8 +128,37 @@ class QueryBuilder:
         self._cache_ttl = ttl
         return self
     
+    def _cache_key_params(self) -> Dict[str, Any]:
+        """Stable, JSON-serialisable signature of this query for the cache."""
+        def s(expr: Any) -> str:
+            # __repr__ is deterministic for our small Expression tree; for
+            # arbitrary user-supplied expressions we fall back to the type.
+            try:
+                return repr(expr)
+            except Exception:
+                return type(expr).__name__
+        return {
+            "select": [s(e) for e in self._select_exprs],
+            "filters": [s(e) for e in self._filter_exprs],
+            "group_by": [s(e) for e in self._group_by_exprs],
+            "order_by": [s(e) for e in self._order_by_exprs],
+            "limit": self._limit,
+            "with_columns": [(n, s(e)) for n, e in self._with_columns],
+            "joins": [(t, on, how) for (t, on, how) in self._joins],
+        }
+
     def execute(self) -> pl.DataFrame:
-        """Execute the query and return a Polars DataFrame"""
+        """Execute the query and return a Polars DataFrame."""
+        # 0. Cache lookup. ``cache(ttl)`` is a no-op without this — for years
+        # the TTL was just stored on the builder and never consulted. We key
+        # on table + query plan so that two filter/limit combos don't collide.
+        cache_enabled = self._cache_ttl is not None
+        cache_params = self._cache_key_params() if cache_enabled else None
+        if cache_enabled:
+            cached = _QUERY_CACHE.get(self.table_name, cache_params)
+            if cached is not None:
+                return cached
+
         # 1. Predicate Pushdown
         # Identify filters that can be pushed down to PyIceberg
         iceberg_filters = []
@@ -208,7 +255,9 @@ class QueryBuilder:
         # Apply Limit
         if self._limit is not None:
             df = df.head(self._limit)
-            
+
+        if cache_enabled:
+            _QUERY_CACHE.put(self.table_name, cache_params, df, ttl=self._cache_ttl)
         return df
 
     # Write Operations
@@ -370,19 +419,21 @@ class QueryBuilder:
         # Using Polars to generate the filter expression string or just iterate?
         
         # Iterating is safer for memory.
-        from pyiceberg.expressions import EqualTo, And
-        
+        from pyiceberg.expressions import EqualTo, And, IsNull
+
+        def _eq_or_isnull(col: str, val: Any):
+            # Iceberg has no EqualTo(col, None); use IsNull for null values.
+            return IsNull(col) if val is None else EqualTo(col, val)
+
         rows = distinct_partitions.to_dicts()
         for row in rows:
             # 3a. Build Partition Filter
             part_filter = AlwaysTrue()
             for col, val in row.items():
-                # Note: Handling types (date, etc) might be tricky if not careful.
-                # Assuming simple types for now.
-                 if part_filter == AlwaysTrue():
-                     part_filter = EqualTo(col, val)
-                 else:
-                     part_filter = And(part_filter, EqualTo(col, val))
+                if part_filter == AlwaysTrue():
+                    part_filter = _eq_or_isnull(col, val)
+                else:
+                    part_filter = And(part_filter, _eq_or_isnull(col, val))
             
             # 3b. Read Full Partition
             # We use the partition filter to get ALL rows in that partition
@@ -411,77 +462,109 @@ class QueryBuilder:
                 table.overwrite(updated_part_df.to_arrow(), overwrite_filter=part_filter)
 
 
-    def merge(self, source_data: pl.DataFrame, on: str, 
+    def merge(self, source_data: pl.DataFrame, on: str,
               when_matched_update: Optional[Dict[str, Any]] = None,
               when_not_matched_insert: Optional[Dict[str, Any]] = None) -> None:
         """
-        Merge source data into target table (Upsert).
-        
-        Simulated using Copy-on-Write:
-        1. Read target
-        2. Join with source
-        3. Apply logic
-        4. Overwrite
+        Merge source data into the target table (upsert) using Copy-on-Write.
+
+        Strategy:
+            1. Split target rows into "matched" (key present in source) and
+               "unmatched" (key absent in source).
+            2. For matched rows, apply ``when_matched_update``. The value of each
+               entry can be a constant, a Polars expression, or a string naming
+               a column in ``source_data`` (looked up via a left join on ``on``).
+            3. For source rows whose key isn't already in the target, insert them
+               if ``when_not_matched_insert`` is truthy.
+            4. Concatenate keep + updated + inserted rows aligned to the target
+               schema and overwrite the table.
+
+        Args:
+            source_data: Polars DataFrame of incoming rows.
+            on: Column name to merge on.
+            when_matched_update: Optional dict ``{target_col: value_or_expr_or_source_col}``.
+                If a value is a string and that string is a column in
+                ``source_data``, the source's value for the matched row is used.
+                Pass ``True`` (or any truthy non-dict) to replace matched rows
+                wholesale with the corresponding source row.
+            when_not_matched_insert: Truthy to insert source rows without a match.
+                A dict may be provided to project specific source columns into
+                the target (other target columns become null).
         """
         target_df = self.operations.read_table(self.table_name)
-        
-        # Perform join to identify matches
-        # We'll do a full outer join to handle both matched and not matched
-        # But Polars join might require suffix handling
-        
-        # Simpler approach:
-        # 1. Identify IDs in source
-        source_ids = source_data.select(on).unique()
-        
-        # 2. Split target into matched and not matched (if we can filter by ID)
-        # Or just join and reconstruct
-        
-        # Let's use Polars update/join functionality
-        # join(..., how="left") -> update columns
-        # concat -> insert new
-        
-        # 1. Update existing rows
-        if when_matched_update:
-            # Join target with source on key
-            # Replace columns in target with source columns where matched
-            
-            # This is complex to do efficiently in pure DataFrame API without SQL MERGE
-            # Simplified:
-            # A. Rows in target that are NOT in source -> Keep as is
-            # B. Rows in target that ARE in source -> Update
-            # C. Rows in source that are NOT in target -> Insert
-            
-            # A: Target Anti Join Source
-            df_keep = target_df.join(source_data, on=on, how="anti")
-            
-            # B: Target Semi Join Source -> Update
-            # Actually, we just take the source rows that match target rows?
-            # If source has the updated values, we just take source rows that exist in target
-            df_update = source_data.join(target_df.select(on), on=on, how="semi")
-            
-            # Apply specific updates if provided, otherwise assume source has full row?
-            # If when_matched_update is a dict of col -> val/expr, we apply it
-            # If it's just "update", we assume source replaces target
-            
-            if when_matched_update:
-                # If specific updates, we might need to join to get old values if not updating all?
-                # For simplicity, let's assume source contains the new state for updated rows
-                pass
-        else:
-            # If no update, keep all target rows?
-            # MERGE usually implies update or insert
-            df_keep = target_df
-            df_update = pl.DataFrame([], schema=target_df.schema)
+        target_schema = target_df.schema
+        target_cols = target_df.columns
 
-        # 2. Insert new rows
-        if when_not_matched_insert:
-            # C: Source Anti Join Target
-            df_insert = source_data.join(target_df, on=on, how="anti")
+        # A: target rows not in source — keep as-is.
+        df_keep = target_df.join(source_data.select(on), on=on, how="anti")
+
+        # B: target rows in source — apply updates.
+        if when_matched_update:
+            matched = target_df.join(source_data.select(on), on=on, how="semi")
+
+            if isinstance(when_matched_update, dict):
+                # Join in the source columns we need; suffix collisions with "_src".
+                src_renames = {c: f"__src_{c}" for c in source_data.columns if c != on}
+                source_renamed = source_data.rename(src_renames)
+                joined = matched.join(source_renamed, on=on, how="left")
+
+                update_exprs = []
+                for col, value in when_matched_update.items():
+                    if col not in target_cols:
+                        raise ValueError(
+                            f"when_matched_update references unknown target column {col!r}"
+                        )
+                    if isinstance(value, pl.Expr):
+                        expr = value
+                    elif isinstance(value, str) and value in source_data.columns:
+                        expr = pl.col(f"__src_{value}") if value != on else pl.col(on)
+                    else:
+                        expr = pl.lit(value)
+                    update_exprs.append(expr.alias(col))
+
+                df_update = joined.with_columns(update_exprs).select(target_cols)
+            else:
+                # Replace matched rows wholesale with the corresponding source row.
+                df_update = source_data.join(matched.select(on), on=on, how="semi")
         else:
-            df_insert = pl.DataFrame([], schema=target_df.schema)
-            
-        # Combine
-        final_df = pl.concat([df_keep, df_update, df_insert])
-        
-        # Overwrite
+            df_update = pl.DataFrame(schema=target_schema)
+
+        # C: source rows whose key isn't already in target — insert.
+        if when_not_matched_insert:
+            new_rows = source_data.join(target_df.select(on), on=on, how="anti")
+            if isinstance(when_not_matched_insert, dict):
+                # Project specified columns; fill any missing target columns with null.
+                projected = {}
+                for tgt_col, src_value in when_not_matched_insert.items():
+                    if isinstance(src_value, str) and src_value in new_rows.columns:
+                        projected[tgt_col] = pl.col(src_value)
+                    elif isinstance(src_value, pl.Expr):
+                        projected[tgt_col] = src_value
+                    else:
+                        projected[tgt_col] = pl.lit(src_value)
+                df_insert = new_rows.with_columns(
+                    [v.alias(k) for k, v in projected.items()]
+                )
+            else:
+                df_insert = new_rows
+        else:
+            df_insert = pl.DataFrame(schema=target_schema)
+
+        # Align each piece to the target schema (add missing columns as null,
+        # drop extras, reorder). Concat then overwrite.
+        def _align(df: pl.DataFrame) -> pl.DataFrame:
+            if df.height == 0:
+                return pl.DataFrame(schema=target_schema)
+            missing = [c for c in target_cols if c not in df.columns]
+            out = df
+            if missing:
+                out = out.with_columns([
+                    pl.lit(None).cast(target_schema[c]).alias(c) for c in missing
+                ])
+            return out.select(target_cols)
+
+        final_df = pl.concat(
+            [_align(df_keep), _align(df_update), _align(df_insert)],
+            how="vertical_relaxed",
+        )
         self.operations.overwrite_table(self.table_name, final_df)

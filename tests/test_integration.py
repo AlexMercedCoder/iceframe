@@ -62,11 +62,9 @@ def test_iceframe_integration():
     # Mock the catalog and operations
     config = {"uri": "http://mock", "type": "rest", "warehouse": "s3://mock", "token": "mock_token"}
     
-    # Mock CatalogPool to avoid connection attempts
-    with unittest.mock.patch('iceframe.core.CatalogPool') as MockPool:
-        mock_pool_instance = MockPool.return_value
-        mock_pool_instance.get_connection.return_value = MagicMock()
-        
+    # Mock load_catalog to avoid connection attempts. (0.12 removed the
+    # CatalogPool indirection in favour of a single direct catalog handle.)
+    with unittest.mock.patch('iceframe.core.load_catalog', return_value=MagicMock()):
         ice = IceFrame(config)
         ice._operations = MagicMock()
     

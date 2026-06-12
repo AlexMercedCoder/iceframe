@@ -5,6 +5,7 @@ Table statistics and metadata for IceFrame.
 from typing import Dict, Any, Optional
 import polars as pl
 from pyiceberg.table import Table
+from iceframe.utils import safe_summary_dict
 
 class TableStats:
     """
@@ -45,8 +46,9 @@ class TableStats:
         
         # Add snapshot-level stats if available
         if current_snapshot:
-            summary = current_snapshot.summary
-            if summary:
+            raw_summary = current_snapshot.summary
+            if raw_summary:
+                summary = safe_summary_dict(raw_summary)
                 stats["data"] = {
                     "total_records": int(summary.get("total-records", 0)) if summary.get("total-records") else None,
                     "total_data_files": int(summary.get("total-data-files", 0)) if summary.get("total-data-files") else None,

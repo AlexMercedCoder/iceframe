@@ -4,6 +4,8 @@ A DataFrame-like library for working with Apache Iceberg tables using REST catal
 
 IceFrame provides a simple, intuitive API for creating, reading, updating, and deleting Iceberg tables, as well as performing maintenance operations and exporting data.
 
+> **Upgrading from 0.11?** 0.12.0 fixes several long-standing data-correctness bugs, including a silent **double-write** in every `create_table_from_*` helper, an orphan-file collector that could delete files referenced by older snapshots, and a `~/NOT` predicate that could silently return zero rows. See [`CHANGELOG.md`](CHANGELOG.md) for the full list and behaviour notes.
+
 ## Features
 
 - **DataFrame API**: Familiar interface for working with tables
@@ -104,19 +106,19 @@ ICEBERG_CATALOG_TYPE=rest
 2. Use IceFrame in your code:
 
 ```python
-from iceframe import IceFrame
-from iceframe.utils import load_catalog_config_from_env
+from iceframe import IceFrame, col, lit, load_catalog_config_from_env
 import polars as pl
 
 # Initialize
 config = load_catalog_config_from_env()
 ice = IceFrame(config)
 
-# Create a table
+# Create an EMPTY table (note: as of 0.12, create_table never writes data
+# even if you pass a DataFrame as the schema — use append_to_table afterwards)
 schema = {
     "id": "long",
     "name": "string",
-    "created_at": "timestamp"
+    "created_at": "timestamp",
 }
 ice.create_table("my_table", schema)
 
@@ -124,7 +126,7 @@ ice.create_table("my_table", schema)
 data = pl.DataFrame({
     "id": [1, 2],
     "name": ["Alice", "Bob"],
-    "created_at": [pl.datetime(2024, 1, 1), pl.datetime(2024, 1, 2)]
+    "created_at": [pl.datetime(2024, 1, 1), pl.datetime(2024, 1, 2)],
 })
 ice.append_to_table("my_table", data)
 
@@ -132,12 +134,12 @@ ice.append_to_table("my_table", data)
 df = ice.read_table("my_table")
 print(df)
 
-# Query Builder API
-from iceframe.expressions import col
-from iceframe.functions import sum
+# Query Builder API — col, lit, IceFrame, QueryBuilder all importable from
+# the package root as of 0.12.
+from iceframe.functions import sum as ice_sum
 
 df = (ice.query("my_table")
-      .select("name", sum(col("id")).alias("total_id"))
+      .select("name", ice_sum(col("id")).alias("total_id"))
       .group_by("name")
       .execute())
 print(df)

@@ -91,14 +91,31 @@ class GarbageCollector:
         """
         # Native implementation
         try:
-            # 1. Get all referenced data files from current snapshot
-            referenced_files = set()
-            current_snapshot = self.table.current_snapshot()
-            
-            if current_snapshot:
-                for manifest in current_snapshot.manifests(self.table.io):
-                    for entry in manifest.fetch_manifest_entry(self.table.io):
-                        referenced_files.add(entry.data_file.file_path)
+            # 1. Collect referenced data files from EVERY live snapshot, not
+            #    just the current one. Older snapshots are still valid for
+            #    rollback / time-travel until they're explicitly expired; if
+            #    we only looked at the current snapshot we'd happily delete
+            #    files that those snapshots still need.
+            referenced_files: set = set()
+            seen_manifests: set = set()  # de-dup manifest scans across snapshots
+            for snapshot in self.table.snapshots():
+                try:
+                    for manifest in snapshot.manifests(self.table.io):
+                        if manifest.manifest_path in seen_manifests:
+                            continue
+                        seen_manifests.add(manifest.manifest_path)
+                        for entry in manifest.fetch_manifest_entry(self.table.io):
+                            referenced_files.add(entry.data_file.file_path)
+                except Exception as e:
+                    # If a single snapshot's manifest can't be read, skip it
+                    # rather than abort — but be loud about it: we cannot
+                    # safely classify orphans without knowing what it references.
+                    print(
+                        f"Warning: could not read manifests for snapshot "
+                        f"{snapshot.snapshot_id}: {e}. Aborting orphan cleanup "
+                        f"to avoid deleting live data."
+                    )
+                    return []
             
             # 2. List all files in table data and metadata locations
             io = self.table.io

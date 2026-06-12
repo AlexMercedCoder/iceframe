@@ -43,24 +43,36 @@ def load_catalog_config_from_env() -> Dict[str, Any]:
 def validate_catalog_config(config: Dict[str, Any]) -> None:
     """
     Validate catalog configuration.
-    
+
     Args:
         config: Catalog configuration dictionary
-        
+
     Raises:
-        ValueError: If required configuration is missing
+        ValueError: If required configuration is missing.
+
+    Notes:
+        REST catalogs without an explicit ``token`` or ``oauth2-server-uri``
+        get a single ``warnings.warn`` instead of a hard error — unauthenticated
+        local REST setups and SigV4-signed catalogs are both legitimate and
+        would have been rejected by the older strict check. Auth failures
+        will surface naturally at connect time.
     """
+    import warnings
+
     required_fields = ["uri", "type"]
-    
     for field in required_fields:
         if field not in config or not config[field]:
             raise ValueError(f"Missing required catalog configuration: {field}")
-    
-    # For REST catalogs, we need either a token or OAuth2 configuration
+
     if config["type"] == "rest":
-        if "token" not in config and "oauth2-server-uri" not in config:
-            raise ValueError(
-                "REST catalog requires either 'token' or 'oauth2-server-uri' configuration"
+        has_auth = any(k in config for k in ("token", "oauth2-server-uri", "credential"))
+        has_signer = any(k.startswith("rest.sigv4") or k == "rest.signing-name" for k in config)
+        if not has_auth and not has_signer:
+            warnings.warn(
+                "REST catalog has no 'token', 'oauth2-server-uri', 'credential', "
+                "or SigV4 signing config — connecting unauthenticated.",
+                UserWarning,
+                stacklevel=2,
             )
 
 
@@ -100,3 +112,43 @@ def format_table_identifier(namespace: str, table_name: str) -> str:
         Full table identifier
     """
     return f"{namespace}.{table_name}"
+
+
+def safe_summary_dict(summary: Any) -> Dict[str, Any]:
+    """
+    Safely convert a PyIceberg Summary object to a plain dict.
+    
+    PyIceberg's Summary class extends Mapping but does not implement
+    __iter__, so calling dict(summary) raises:
+        AttributeError: 'tuple' object has no attribute 'lower'
+    
+    This utility uses Pydantic's model_dump() when available, falling
+    back to manual construction from the operation and additional_properties.
+    
+    Args:
+        summary: A PyIceberg Summary object (or any Mapping)
+        
+    Returns:
+        A plain dict with all summary key-value pairs
+    """
+    if summary is None:
+        return {}
+
+    # Try Pydantic v2 model_dump first (most reliable)
+    if hasattr(summary, "model_dump"):
+        try:
+            return summary.model_dump()
+        except Exception:
+            pass
+
+    # Fallback: manually reconstruct from known attributes
+    if hasattr(summary, "operation") and hasattr(summary, "additional_properties"):
+        result: Dict[str, Any] = {"operation": str(summary.operation.value)}
+        result.update(summary.additional_properties)
+        return result
+
+    # Last resort: it might be a normal dict-like object
+    try:
+        return dict(summary)
+    except Exception:
+        return {}
