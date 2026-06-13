@@ -159,7 +159,170 @@ some dead surface area is removed.
 
 ---
 
-## 0.11.1 and earlier
+## 0.11.1 — 2026-02-18
 
-See `git log` for prior history. The 0.12 release is the first one with
-a structured CHANGELOG.
+No corresponding git commit. Released as a same-day patch over `0.11.0`
+with the only differences captured in the uploaded sdist; the source tree
+in this repo was not bumped or tagged for this release. Treat as an
+unrecorded follow-up to `0.11.0`.
+
+## 0.11.0 — 2026-02-18
+
+No corresponding git commit between the `0.10.0` commit (`a4f0e9b`,
+2025-12-11) and the `0.12.0` commit (`c31cf00`, 2026-06-12). The
+`0.11.0` and `0.11.1` releases were published to PyPI without their
+sources being committed to this repository, so the exact change set
+cannot be reconstructed from history. The `0.12.0` release notes above
+implicitly cover the long tail of bugs that had accumulated by then.
+
+## 0.10.0 — 2025-12-11
+
+### Changed
+
+- Major expansion of `iceframe/compaction.py` (~370 lines added) covering
+  the partition-stats, dry-run / bloom, and parallel-ordering paths.
+  Several of those blocks were later identified as dead code and removed
+  in 0.12.0. (`a4f0e9b`)
+
+## 0.9.0 — 2025-12-11
+
+No `pyproject.toml` bump landed for this release in git — the commits
+below were all tagged `version = "0.8.0"` in source but were what shipped
+as `0.9.0` on PyPI.
+
+### Added
+
+- Compaction enhancements across `compaction.py`, `operations.py`,
+  `query.py`, and `schema.py` — partition-aware compaction work, the
+  initial version of the `bin_pack` / `z_order` planner, and the
+  per-partition compactor wired into `QueryBuilder`. (`47892c7`,
+  `4b9346a`, `d07c68e`)
+- Native maintenance / GC enhancements — `gc.py` and `maintenance.py`
+  reworked to use PyIceberg's native APIs where available. (`f258b2d`)
+
+### Fixed
+
+- `create_table` / `read_table` enhancements and bug fixes in
+  `operations.py` and `ingest.py`. (`ab93476`)
+
+## 0.8.1 — 2025-12-19
+
+No corresponding git commit. Released as a backport patch over `0.8.0`
+roughly a week after `0.10.0`. The exact fix is not recoverable from this
+repository.
+
+## 0.8.0 — 2025-12-10
+
+### Added
+
+- Broad ingest-features expansion (`iceframe/ingest.py`, `iceframe/core.py`):
+  HTTP API ingest, clipboard ingest, folder ingest, HTML table scraping,
+  Hugging Face dataset ingest, and a `variables` document explaining
+  configuration. (`a24d676`)
+
+## 0.7.0 — 2025-12-10
+
+### Added
+
+- **DataFusion / lazy / distributed read paths.** New
+  `iceframe/datafusion_ops.py`, `iceframe/distributed.py`, plus lazy-read
+  and streaming-compaction hooks in `operations.py` / `streaming.py`.
+  (`3d49756`)
+- **Enhanced data-quality module and a visualization module.** Major
+  rework of `iceframe/quality.py`; new `iceframe/visualization.py`.
+  (`ce22370`)
+
+## 0.6.0 — 2025-12-09
+
+### Added
+
+- **File-upload ingest paths.** `iceframe/ingest.py` and `core.py` gained
+  the "advanced" / "native" / "optional" upload-file feature set
+  (uploading files directly into the catalog as an Iceberg table) plus
+  documentation under `docs/ingest_advanced.md`, `docs/ingest_native.md`,
+  `docs/ingest_optional.md`. (`acc8f08`)
+
+## 0.5.0 — 2025-12-05
+
+### Added
+
+- **MCP server.** New `iceframe/mcp_server.py` exposing IceFrame
+  operations over the Model Context Protocol, plus CLI wiring and
+  `docs/mcp.md`. (`f1df307`)
+- Additional ingest features layered on top of `0.4.0`'s ingest module.
+  (`02131c3`)
+
+## 0.4.0 — 2025-12-05
+
+### Added
+
+- **`iceframe.ingest` module.** First-class ingest helpers for CSV,
+  JSON, Parquet, Excel, SQL, and friends, with the
+  `create_table_from_<source>` helpers on `IceFrame`. Documented in
+  `docs/ingest.md`. (`e787be8`)
+
+> Historical note: this is the release that introduced the
+> `create_table_from_<source>` → `append_to_table` double-write bug
+> later fixed in `0.12.0`.
+
+## 0.3.0 — 2025-12-04
+
+### Added
+
+- **Jupyter notebook magics.** New `iceframe/magics.py` (`%%iceframe` /
+  `%iceframe` line magics) with `docs/notebooks.md`. (`d3424c3`)
+- **Pydantic integration.** New `iceframe/pydantic.py` for round-tripping
+  IceFrame tables with Pydantic models, with `docs/pydantic.md`.
+  (`d3424c3`)
+
+### Changed
+
+- Documentation reorganisation — alpha-stage banner across docs, the
+  combined-markdown "single-page docs" build, and the
+  `docs/combine_markdowns` doc script. (`d1e38df`, `b29a1c0`)
+
+## 0.2.0 — 2025-12-03
+
+### Changed
+
+- Version bump and small documentation-tooling additions
+  (`docs/combine_markdowns.py`-style script). No notable behaviour
+  changes versus `0.1.0`. (`6a2026b`, `2bee2ea`)
+
+## 0.1.0 — 2025-12-03
+
+Initial public release.
+
+### Added
+
+- **Core IceFrame surface** — `iceframe/__init__.py`, `iceframe/core.py`,
+  `iceframe/operations.py`, `iceframe/schema.py`, `iceframe/partition.py`,
+  `iceframe/namespace.py`, `iceframe/utils.py`, `iceframe/functions.py`,
+  `iceframe/export.py`, `iceframe/maintenance.py`. (`f9f89c1`)
+- **`QueryBuilder` and `Expression` system** — `iceframe/query.py`,
+  `iceframe/expressions.py`, including the `col(...) / lit(...)` builder
+  and predicate pushdown to PyIceberg. (`f9f89c1`)
+- **Branching, joins, statistics, async, CLI, incremental, quality** —
+  `iceframe/branching.py`, `iceframe/incremental.py`, `iceframe/stats.py`,
+  `iceframe/async_ops.py`, `iceframe/cli.py`, `iceframe/quality.py`.
+  (`90c6acc`)
+- **Advanced lakehouse operations** — `iceframe/mor.py` (merge-on-read),
+  `iceframe/gc.py` (orphan-file GC and snapshot expiry),
+  `iceframe/evolution.py` (schema evolution), `iceframe/compaction.py`
+  (initial bin-pack compaction), `iceframe/procedures.py`. (`9d8f657`)
+- **Catalog operations, ingestion, rollback** — `iceframe/catalog_ops.py`,
+  `iceframe/ingestion.py`, `iceframe/rollback.py`, additional
+  procedures. (`34506b4`)
+- **Native maintenance** — `iceframe/gc.py` / `iceframe/compaction.py`
+  using PyIceberg's native maintenance APIs where available. (`5f6f07c`)
+- **Scalability stack** — `iceframe/cache.py`, `iceframe/federation.py`,
+  `iceframe/memory.py`, `iceframe/monitoring.py`, `iceframe/optimizer.py`,
+  `iceframe/parallel.py`, `iceframe/pool.py` (later removed in `0.12.0`),
+  `iceframe/skipping.py`, `iceframe/streaming.py`. (`9b93208`)
+- **AI Agent layer** — `iceframe/agent/` with provider bindings for
+  Anthropic (`llm_anthropic.py`), OpenAI (`llm_openai.py`), Gemini
+  (`llm_gemini.py`), plus the agent CLI in `iceframe/agent_cli.py`.
+  (`9b93208`)
+- **Recipes documentation** — `docs/recipes/etl_pipeline.md`,
+  `docs/recipes/incremental_ingestion.md`, `docs/recipes/scd_type_2.md`,
+  `docs/recipes/data_quality_gate.md`. (`59a08f7`)
