@@ -2,7 +2,8 @@
 Visualization module for IceFrame using Altair.
 """
 
-from typing import Optional, List, Union, Any
+from typing import Optional
+
 import polars as pl
 
 try:
@@ -15,27 +16,27 @@ class Visualizer:
     """
     Generate visualizations from Iceberg tables.
     """
-    
+
     def __init__(self, ice_frame):
         """
         Initialize Visualizer.
-        
+
         Args:
             ice_frame: IceFrame instance
         """
         if not VIZ_AVAILABLE:
             raise ImportError("altair is required. Install with 'pip install iceframe[viz]'")
-            
+
         self.ice_frame = ice_frame
-        
+
     def _get_data(self, table_name: str, limit: int = 10000) -> pl.DataFrame:
         """
         Get data for visualization (limited to prevent browser crash).
-        
+
         Args:
             table_name: Name of the table
             limit: Max rows to fetch
-            
+
         Returns:
             Polars DataFrame
         """
@@ -43,10 +44,10 @@ class Visualizer:
         # Since read_table doesn't support limit natively in PyIceberg scan (it does but we wrap it),
         # let's use scan_batches or just read and slice (if small) or query.
         # Query is best if we want to push down limit.
-        
+
         # Using scan_batches to get iterator and take first batch(es) up to limit is efficient.
         batches = self.ice_frame._operations.scan_batches(table_name, limit=limit)
-        
+
         # Collect batches
         dfs = []
         count = 0
@@ -56,16 +57,16 @@ class Visualizer:
             count += df.height
             if count >= limit:
                 break
-                
+
         if not dfs:
             return pl.DataFrame()
-            
+
         return pl.concat(dfs).head(limit)
 
     def plot_distribution(self, table_name: str, column: str, limit: int = 10000) -> 'alt.Chart':
         """
         Plot distribution of a column (Histogram).
-        
+
         Args:
             table_name: Table name
             column: Column to plot
@@ -89,10 +90,10 @@ class Visualizer:
             y=y,
             tooltip=[x, y]
         )
-        
+
         if color:
             chart = chart.encode(color=color)
-            
+
         return chart.properties(title=f"{x} vs {y} in {table_name}")
 
     def plot_bar(
@@ -120,8 +121,8 @@ class Visualizer:
             y=y,
             tooltip=[x, y]
         )
-        
+
         if color:
             chart = chart.encode(color=color)
-            
+
         return chart.properties(title=f"{y} over {x} in {table_name}")

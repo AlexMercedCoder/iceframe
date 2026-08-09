@@ -2,22 +2,33 @@
 Partition management for IceFrame.
 """
 
-from typing import Any, Optional
+from typing import Optional
+
 from pyiceberg.table import Table
-from pyiceberg.transforms import Transform, IdentityTransform, BucketTransform, TruncateTransform, YearTransform, MonthTransform, DayTransform, HourTransform
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    IdentityTransform,
+    MonthTransform,
+    Transform,
+    TruncateTransform,
+    YearTransform,
+)
+
 
 class PartitionManager:
     """
     Manages partitioning for Iceberg tables.
     """
-    
+
     def __init__(self, table: Table):
         self.table = table
-        
+
     def add_partition_field(self, source_col: str, transform: str = "identity", transform_arg: Optional[int] = None, name: Optional[str] = None) -> None:
         """
         Add a partition field to the table.
-        
+
         Args:
             source_col: Name of the source column
             transform: Transform type ("identity", "bucket", "truncate", "year", "month", "day", "hour")
@@ -27,17 +38,17 @@ class PartitionManager:
         iceberg_transform = self._create_transform(transform, transform_arg)
         with self.table.update_spec() as update:
             update.add_field(source_col, iceberg_transform, name)
-            
+
     def drop_partition_field(self, name: str) -> None:
         """
         Drop a partition field.
-        
+
         Args:
             name: Name of the partition field (or transform string if name not set)
         """
         with self.table.update_spec() as update:
             update.remove_field(name)
-            
+
     def _create_transform(self, transform: str, arg: Optional[int]) -> Transform:
         """Create Iceberg transform object"""
         transform = transform.lower()

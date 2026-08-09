@@ -2,41 +2,42 @@
 Utility functions for IceFrame library
 """
 
-from typing import Dict, Any, Optional
 import os
+from typing import Any, Dict
+
 from dotenv import load_dotenv
 
 
 def load_catalog_config_from_env() -> Dict[str, Any]:
     """
     Load catalog configuration from environment variables.
-    
+
     Returns:
         Dict containing catalog configuration
     """
     load_dotenv()
-    
+
     config = {
         "uri": os.getenv("ICEBERG_CATALOG_URI"),
         "type": os.getenv("ICEBERG_CATALOG_TYPE", "rest"),
         "warehouse": os.getenv("ICEBERG_WAREHOUSE"),
     }
-    
+
     # Add token if present
     token = os.getenv("ICEBERG_TOKEN")
     if token:
         config["token"] = token
-    
+
     # Add OAuth2 server URI if present
     oauth2_uri = os.getenv("ICEBERG_OAUTH2_SERVER_URI")
     if oauth2_uri:
         config["oauth2-server-uri"] = oauth2_uri
-    
+
     # Add credential vending if enabled
     credential_vending = os.getenv("ICEBERG_CREDENTIAL_VENDING")
     if credential_vending:
         config["header.X-Iceberg-Access-Delegation"] = credential_vending
-    
+
     return config
 
 
@@ -79,15 +80,15 @@ def validate_catalog_config(config: Dict[str, Any]) -> None:
 def normalize_table_identifier(table_name: str) -> tuple:
     """
     Normalize table identifier to (namespace, table_name) tuple.
-    
+
     Args:
         table_name: Table name, can be 'table' or 'namespace.table'
-        
+
     Returns:
         Tuple of (namespace, table_name)
     """
     parts = table_name.split(".")
-    
+
     if len(parts) == 1:
         # No namespace specified, use default
         return ("default", parts[0])
@@ -103,11 +104,11 @@ def normalize_table_identifier(table_name: str) -> tuple:
 def format_table_identifier(namespace: str, table_name: str) -> str:
     """
     Format namespace and table name into full identifier.
-    
+
     Args:
         namespace: Table namespace
         table_name: Table name
-        
+
     Returns:
         Full table identifier
     """
@@ -117,17 +118,17 @@ def format_table_identifier(namespace: str, table_name: str) -> str:
 def safe_summary_dict(summary: Any) -> Dict[str, Any]:
     """
     Safely convert a PyIceberg Summary object to a plain dict.
-    
+
     PyIceberg's Summary class extends Mapping but does not implement
     __iter__, so calling dict(summary) raises:
         AttributeError: 'tuple' object has no attribute 'lower'
-    
+
     This utility uses Pydantic's model_dump() when available, falling
     back to manual construction from the operation and additional_properties.
-    
+
     Args:
         summary: A PyIceberg Summary object (or any Mapping)
-        
+
     Returns:
         A plain dict with all summary key-value pairs
     """

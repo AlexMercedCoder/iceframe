@@ -2,22 +2,23 @@
 IceFrame AI Agent - Natural language interface for Iceberg tables.
 """
 
-from typing import List, Dict, Any, Optional
 import json
-from iceframe.core import IceFrame
-from iceframe.agent.llm_base import BaseLLM, create_llm, LLMConfig
+from typing import Any, Dict, List, Optional
+
+from iceframe.agent.llm_base import BaseLLM, create_llm
 from iceframe.agent.tools import get_tool_definitions
-from iceframe.expressions import Column
+from iceframe.core import IceFrame
+
 
 class IceFrameAgent:
     """
     AI Agent for natural language interaction with IceFrame.
     """
-    
+
     def __init__(self, ice_frame: IceFrame, llm: Optional[BaseLLM] = None):
         """
         Initialize agent.
-        
+
         Args:
             ice_frame: IceFrame instance
             llm: Optional LLM instance (auto-detects if None)
@@ -26,7 +27,7 @@ class IceFrameAgent:
         self.llm = llm or create_llm()
         self.conversation_history: List[Dict[str, str]] = []
         self.tools = get_tool_definitions()
-        
+
         # System prompt
         self.system_prompt = """You are an AI assistant for IceFrame, a Python library for Apache Iceberg tables.
 
@@ -51,14 +52,14 @@ Available tools:
 - generate_code: Generate Python code for operations
 
 Be helpful, accurate, and educational."""
-        
+
     def chat(self, user_message: str) -> str:
         """
         Send a message to the agent.
-        
+
         Args:
             user_message: User's message
-            
+
         Returns:
             Agent's response
         """
@@ -67,13 +68,13 @@ Be helpful, accurate, and educational."""
             "role": "user",
             "content": user_message
         })
-        
+
         # Prepare messages with system prompt
         messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
-        
+
         # Get LLM response
         response = self.llm.chat(messages, tools=self.tools)
-        
+
         # Handle tool calls
         if "tool_calls" in response:
             tool_results = []
@@ -84,36 +85,36 @@ Be helpful, accurate, and educational."""
                     "name": tool_call["name"],
                     "result": result
                 })
-            
+
             # Add tool results to conversation
             self.conversation_history.append({
                 "role": "assistant",
                 "content": response.get("content", ""),
                 "tool_calls": response["tool_calls"]
             })
-            
+
             for tr in tool_results:
                 self.conversation_history.append({
                     "role": "tool",
                     "content": str(tr["result"]),
                     "tool_call_id": tr["tool_call_id"]
                 })
-            
+
             # Get final response
             messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
             final_response = self.llm.chat(messages)
             assistant_message = final_response["content"]
         else:
             assistant_message = response["content"]
-        
+
         # Add assistant response to history
         self.conversation_history.append({
             "role": "assistant",
             "content": assistant_message
         })
-        
+
         return assistant_message
-        
+
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool and return the result"""
         try:
@@ -121,7 +122,7 @@ Be helpful, accurate, and educational."""
                 namespace = arguments.get("namespace", "default")
                 tables = self.ice_frame.list_tables(namespace)
                 return {"tables": tables}
-                
+
             elif tool_name == "describe_table":
                 table_name = arguments["table_name"]
                 table = self.ice_frame.get_table(table_name)
@@ -137,27 +138,27 @@ Be helpful, accurate, and educational."""
                     ],
                     "partition_spec": str(table.spec())
                 }
-                
+
             elif tool_name == "get_table_stats":
                 table_name = arguments["table_name"]
                 stats = self.ice_frame.stats(table_name)
                 return stats
-                
+
             elif tool_name == "execute_query":
                 table_name = arguments["table_name"]
                 limit = arguments.get("limit", 10)
                 columns = arguments.get("columns")
-                
+
                 # Simple query execution
                 df = self.ice_frame.read_table(table_name, limit=limit, columns=columns)
-                
+
                 # Return sample of data
                 return {
                     "rows": df.height,
                     "columns": df.columns,
                     "sample": df.head(min(5, df.height)).to_dicts()
                 }
-                
+
             elif tool_name == "generate_code":
                 operation = arguments["operation"]
                 # Generate code template
@@ -169,13 +170,13 @@ ice = IceFrame(config)
 # TODO: Implement {operation}
 """
                 return {"code": code}
-                
+
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
-                
+
         except Exception as e:
             return {"error": str(e)}
-            
+
     def reset_conversation(self):
         """Clear conversation history"""
         self.conversation_history = []

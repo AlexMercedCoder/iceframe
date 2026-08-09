@@ -1,5 +1,12 @@
 # Table Maintenance
 
+> **0.13.0:** `expire_snapshots` previously raised `NotImplementedError`
+> whenever it had work to do — it called `Table.expire_snapshots`, which is
+> not an attribute of PyIceberg's `Table`. It is now implemented on the real
+> API (`Table.maintenance.expire_snapshots`) and returns the list of expired
+> snapshot ids. `remove_orphan_files` is now **dry-run by default**; pass
+> `dry_run=False` to actually delete.
+
 Iceberg tables require periodic maintenance to ensure optimal performance and manage storage costs. IceFrame provides simple methods for common maintenance tasks.
 
 ## Expiring Snapshots

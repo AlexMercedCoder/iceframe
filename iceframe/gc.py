@@ -2,102 +2,226 @@
 Garbage collection and cleanup.
 """
 
-from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from typing import List, Optional, Set
+
 from pyiceberg.table import Table
+
+from iceframe.exceptions import MaintenanceError
+
+logger = logging.getLogger(__name__)
+
+#: Metadata file suffixes that are never data files and must never be
+#: classified as orphans just because no manifest references them. Puffin
+#: statistics and partition-stats files live alongside the manifests and were
+#: previously deleted by ``remove_orphan_files`` on local filesystems.
+_STATISTICS_SUFFIXES = (".puffin", ".stats", ".parquet.stats")
+
 
 class GarbageCollector:
     """
     Manage garbage collection.
     """
-    
+
     def __init__(self, table: Table):
         self.table = table
-        
+
     def expire_snapshots(
         self,
         older_than_ms: Optional[int] = None,
         retain_last: int = 1,
-        max_workers: int = 4
-    ) -> list:
+        max_workers: int = 4,
+    ) -> List[int]:
         """
-        Expire snapshots with native implementation.
-        
+        Expire old snapshots using PyIceberg's native maintenance API.
+
+        The previous implementation called ``Table.expire_snapshots(...)``,
+        which does not exist on ``pyiceberg.table.Table`` — so the ``hasattr``
+        guard always failed and the method raised ``NotImplementedError``
+        whenever it actually had work to do. The real API is
+        ``Table.maintenance.expire_snapshots()`` returning a builder with
+        ``.by_id()`` / ``.older_than()`` / ``.commit()``.
+
+        Snapshots are sorted by ``timestamp_ms`` before ``retain_last`` is
+        applied — ``Table.snapshots()`` is not guaranteed to be chronological.
+
+        Branch and tag heads are protected by PyIceberg itself and are never
+        expired, so the current snapshot always survives.
+
         Args:
-            older_than_ms: Expire snapshots older than this timestamp
-            retain_last: Always retain at least this many snapshots
-            max_workers: Number of parallel workers for deletion
-            
+            older_than_ms: Only expire snapshots strictly older than this
+                millisecond epoch timestamp. ``None`` means no age limit.
+            retain_last: Always keep at least this many of the newest
+                snapshots. ``0`` means "no retention floor" (protected refs
+                still survive).
+            max_workers: Accepted for API compatibility; snapshot expiry is a
+                single metadata commit, so this is unused.
+
         Returns:
-            List of expired snapshot IDs
+            The list of snapshot ids that were requested for expiry.
         """
-        # Native implementation using manage_snapshots
-        snapshots = list(self.table.snapshots())
-        
-        if len(snapshots) <= retain_last:
-            return []  # Nothing to expire
-        
-        # Determine which snapshots to expire
-        to_expire = []
-        snapshots_to_check = snapshots[:-retain_last]  # Keep last N
-        
-        for snapshot in snapshots_to_check:
-            if older_than_ms is None or snapshot.timestamp_ms < older_than_ms:
-                to_expire.append(snapshot.snapshot_id)
-        
-        # Expire using manage_snapshots
-        if to_expire:
+        if retain_last < 0:
+            raise MaintenanceError("retain_last must be >= 0")
+
+        snapshots = sorted(self.table.snapshots(), key=lambda s: s.timestamp_ms)
+
+        if retain_last:
+            if len(snapshots) <= retain_last:
+                return []
+            candidates = snapshots[:-retain_last]
+        else:
+            candidates = list(snapshots)
+
+        to_expire = [
+            s.snapshot_id
+            for s in candidates
+            if older_than_ms is None or s.timestamp_ms < older_than_ms
+        ]
+
+        if not to_expire:
+            return []
+
+        try:
+            expire = self.table.maintenance.expire_snapshots()
+        except AttributeError as e:  # pragma: no cover - very old PyIceberg
+            raise MaintenanceError(
+                "Snapshot expiration requires PyIceberg >= 0.10 "
+                "(Table.maintenance.expire_snapshots). "
+                f"Installed version does not provide it: {e}"
+            ) from e
+
+        expired: List[int] = []
+        for snapshot_id in to_expire:
             try:
-                mgr = self.table.manage_snapshots()
-                for snap_id in to_expire:
-                    # PyIceberg doesn't have remove_snapshot, use cherrypick to exclude
-                    # We'll use a workaround: set retention policy via table properties
-                    pass
-                
-                # Fallback: try PyIceberg's expire_snapshots if available
-                if hasattr(self.table, 'expire_snapshots'):
-                    self.table.expire_snapshots(
-                        older_than_ms=older_than_ms,
-                        retain_last=retain_last,
-                        delete_func=self._parallel_delete(max_workers)
-                    )
-                else:
-                    # Manual expiration via transaction
-                    # This requires direct metadata manipulation
-                    raise NotImplementedError(
-                        "Native snapshot expiration requires PyIceberg 0.7.0+ or catalog support"
-                    )
-            except Exception as e:
-                raise NotImplementedError(f"Snapshot expiration not supported: {e}")
-        
-        return to_expire
-        
+                expire = expire.by_id(snapshot_id)
+                expired.append(snapshot_id)
+            except ValueError as e:
+                # Protected (branch/tag head) or already gone. Skip it rather
+                # than aborting the whole run.
+                logger.debug("Skipping snapshot %s: %s", snapshot_id, e)
+
+        if not expired:
+            return []
+
+        try:
+            expire.commit()
+        except Exception as e:
+            raise MaintenanceError(f"Failed to expire snapshots: {e}") from e
+
+        logger.info("Expired %d snapshot(s) from %s", len(expired), self.table.name())
+        return expired
+
+    def _valid_metadata_files(self) -> Set[str]:
+        """Every metadata/statistics file the table still needs."""
+        valid: Set[str] = set()
+
+        if self.table.metadata_location:
+            valid.add(self.table.metadata_location)
+
+        for log_entry in self.table.metadata.metadata_log:
+            valid.add(log_entry.metadata_file)
+
+        for snapshot in self.table.snapshots():
+            if snapshot.manifest_list:
+                valid.add(snapshot.manifest_list)
+            for manifest in snapshot.manifests(self.table.io):
+                valid.add(manifest.manifest_path)
+
+        # Puffin / statistics files are referenced from table metadata, not
+        # from manifests. Missing them here meant orphan cleanup happily
+        # deleted a table's statistics.
+        for attr in ("statistics", "partition_statistics"):
+            for entry in getattr(self.table.metadata, attr, None) or []:
+                path = getattr(entry, "statistics_path", None) or getattr(
+                    entry, "statistics_file_path", None
+                )
+                if path:
+                    valid.add(path)
+
+        return valid
+
+    def _file_mtime_ms(self, file_path: str) -> Optional[float]:
+        """
+        Best-effort modification time in epoch milliseconds.
+
+        Local paths use ``os.stat``. Object stores go through the FileIO's
+        underlying fsspec/PyArrow filesystem, which does expose mtime — the old
+        code only handled ``file://`` and therefore skipped *every* candidate on
+        S3/GCS/ADLS, making the whole operation a no-op there.
+        """
+        local_path = file_path[7:] if file_path.startswith("file://") else file_path
+        if os.path.isabs(local_path) and os.path.exists(local_path):
+            try:
+                return os.stat(local_path).st_mtime * 1000
+            except OSError as e:
+                logger.debug("os.stat failed for %s: %s", file_path, e)
+
+        io = self.table.io
+
+        # fsspec-backed FileIO (s3fs / gcsfs / adlfs)
+        fs = getattr(io, "fs", None) or getattr(io, "get_fs", None)
+        try:
+            if callable(fs):
+                scheme = file_path.split("://", 1)[0] if "://" in file_path else "file"
+                fs = fs(scheme)
+            if fs is not None and hasattr(fs, "info"):
+                info = fs.info(file_path)
+                for key in ("mtime", "LastModified", "last_modified", "modification_time"):
+                    value = info.get(key) if isinstance(info, dict) else None
+                    if value is None:
+                        continue
+                    if isinstance(value, datetime):
+                        return value.timestamp() * 1000
+                    if isinstance(value, (int, float)):
+                        return float(value) * 1000
+        except Exception as e:
+            logger.debug("fsspec stat failed for %s: %s", file_path, e)
+
+        # PyArrow FileSystem-backed FileIO
+        try:
+            from pyarrow.fs import FileSystem
+
+            filesystem, path = FileSystem.from_uri(file_path)
+            info = filesystem.get_file_info(path)
+            if info.mtime is not None:
+                return info.mtime.timestamp() * 1000
+        except Exception as e:
+            logger.debug("pyarrow stat failed for %s: %s", file_path, e)
+
+        return None
+
     def remove_orphan_files(
         self,
         older_than_ms: Optional[int] = None,
         max_workers: int = 4,
-        dry_run: bool = False
-    ) -> list:
+        dry_run: bool = True,
+    ) -> List[str]:
         """
-        Remove orphan files with native implementation.
-        
+        Find (and optionally delete) files under the table location that no
+        live snapshot or metadata entry references.
+
+        ``dry_run`` defaults to ``True``: this operation deletes files
+        permanently, so callers must opt in to the destructive behaviour.
+
         Args:
-            older_than_ms: Only remove files older than this timestamp
-            max_workers: Number of parallel workers
-            dry_run: If True, only list orphans without deleting
-            
+            older_than_ms: Only consider files last modified before this
+                millisecond epoch timestamp. Files whose age can't be
+                determined are always skipped.
+            max_workers: Parallelism for the delete phase.
+            dry_run: When ``True`` (default) nothing is deleted; the candidate
+                list is returned for inspection.
+
         Returns:
-            List of orphaned file paths
+            The list of orphan file paths (deleted, unless ``dry_run``).
         """
-        # Native implementation
         try:
-            # 1. Collect referenced data files from EVERY live snapshot, not
-            #    just the current one. Older snapshots are still valid for
-            #    rollback / time-travel until they're explicitly expired; if
-            #    we only looked at the current snapshot we'd happily delete
-            #    files that those snapshots still need.
-            referenced_files: set = set()
-            seen_manifests: set = set()  # de-dup manifest scans across snapshots
+            # 1. Every data file referenced by ANY live snapshot. Older
+            #    snapshots remain valid for time travel until expired.
+            referenced_files: Set[str] = set()
+            seen_manifests: Set[str] = set()
             for snapshot in self.table.snapshots():
                 try:
                     for manifest in snapshot.manifests(self.table.io):
@@ -107,167 +231,115 @@ class GarbageCollector:
                         for entry in manifest.fetch_manifest_entry(self.table.io):
                             referenced_files.add(entry.data_file.file_path)
                 except Exception as e:
-                    # If a single snapshot's manifest can't be read, skip it
-                    # rather than abort — but be loud about it: we cannot
-                    # safely classify orphans without knowing what it references.
-                    print(
-                        f"Warning: could not read manifests for snapshot "
-                        f"{snapshot.snapshot_id}: {e}. Aborting orphan cleanup "
-                        f"to avoid deleting live data."
+                    # We cannot safely classify orphans without knowing what
+                    # this snapshot references — abort rather than guess.
+                    logger.error(
+                        "Could not read manifests for snapshot %s: %s. "
+                        "Aborting orphan cleanup to avoid deleting live data.",
+                        snapshot.snapshot_id,
+                        e,
                     )
                     return []
-            
-            # 2. List all files in table data and metadata locations
+
+            valid_metadata_files = self._valid_metadata_files()
+
             io = self.table.io
             table_location = self.table.metadata.location
-            data_location = f"{table_location}/data"
-            metadata_location = f"{table_location}/metadata"
-            
-            # Determine valid metadata files
-            valid_metadata_files = set()
-            try:
-                # Add current metadata file
-                if self.table.metadata_location:
-                    valid_metadata_files.add(self.table.metadata_location)
-                
-                # Add history metadata files
-                for log_entry in self.table.metadata.metadata_log:
-                    valid_metadata_files.add(log_entry.metadata_file)
-                    
-                # Add all snapshots (manifest lists)
-                for snapshot in self.table.snapshots():
-                    if snapshot.manifest_list:
-                        valid_metadata_files.add(snapshot.manifest_list)
-                        
-                    # Add manifests for this snapshot
-                    for manifest in snapshot.manifests(self.table.io):
-                        valid_metadata_files.add(manifest.manifest_path)
-                        
-            except Exception as e:
-                print(f"Warning: Could not fully determine valid metadata files: {e}")
-                
-            all_files = set()
-            
-            # Helper to list files
-            def list_files(location):
-                results = set()
-                # Strip scheme for local fs?
-                path_to_list = location
-                if location.startswith("file://"):
-                    path_to_list = location[7:]
-                
-                try:
-                    for file_info in io.list_prefix(path_to_list):
-                        if not file_info.is_directory:
-                            results.add(file_info.path)
-                except Exception as e:
-                    # Also try original location if stripped failed or returned empty
-                    try:
-                        if path_to_list != location:
-                             for file_info in io.list_prefix(location):
-                                if not file_info.is_directory:
-                                    results.add(file_info.path)
-                    except:
-                        pass
-                        
-                # Fallback for local files if empty
-                if not results and location.startswith("file://"):
-                    import os
-                    local_path = location[7:]
-                    if os.path.exists(local_path):
-                        for root, dirs, files in os.walk(local_path):
-                            for file in files:
-                                full_path = os.path.join(root, file)
-                                # Re-add scheme
-                                results.add(f"file://{full_path}")
-                return results
+            all_files: Set[str] = set()
+            all_files.update(self._list_files(f"{table_location}/data"))
+            all_files.update(self._list_files(f"{table_location}/metadata"))
 
-            # List data files
-            all_files.update(list_files(data_location))
-            
-            # List metadata files (if requested or by default?)
-            all_files.update(list_files(metadata_location))
-            
-            # 3. Find orphans
-            orphans = []
-            for file_path in all_files:
-                is_data = file_path in referenced_files
-                is_metadata = file_path in valid_metadata_files
-                
-                if not is_data and not is_metadata:
-                    # Check age if specified
-                    if older_than_ms:
+            # 3. Classify
+            orphans: List[str] = []
+            for file_path in sorted(all_files):
+                if file_path in referenced_files or file_path in valid_metadata_files:
+                    continue
+                if file_path.endswith(_STATISTICS_SUFFIXES):
+                    # Statistics sidecars: never delete on suffix alone.
+                    logger.debug("Preserving statistics-like file %s", file_path)
+                    continue
+
+                if older_than_ms:
+                    mtime = self._file_mtime_ms(file_path)
+                    if mtime is None:
+                        logger.warning(
+                            "Could not determine age of %s; skipping for safety", file_path
+                        )
+                        continue
+                    if mtime >= older_than_ms:
+                        continue
+
+                orphans.append(file_path)
+
+            if dry_run or not orphans:
+                if orphans:
+                    logger.info("Dry run: %d orphan file(s) identified", len(orphans))
+                return orphans
+
+            # 4. Delete, honouring max_workers (previously accepted and ignored).
+            def _delete(path: str) -> None:
+                try:
+                    io.delete(path)
+                except Exception as e:
+                    if path.startswith("file://"):
                         try:
-                            # Try to get mtime
-                            mtime = None
-                            
-                            if file_path.startswith("file://"):
-                                import os
-                                try:
-                                    mtime = os.stat(file_path[7:]).st_mtime * 1000
-                                except:
-                                    pass
-                                    
-                            if mtime is None:
-                                # Try io.new_input_file().stat() if available
-                                try:
-                                    inp = io.new_input_file(file_path)
-                                    # InputFile stat might vary
-                                    # Some implementations support accessing metadata
-                                    pass 
-                                except:
-                                    pass
-                                    
-                            # As a fallback, try io.stat if we haven't tried or logic allows
-                            # But we saw it fail.
-                            
-                            if mtime is not None:
-                                if mtime >= older_than_ms:
-                                    continue
-                            else:
-                                # Could not stat, skip safety
-                                print(f"Warning: Could not determine age of {file_path}, skipping cleanup")
-                                continue
-                                
-                        except Exception as e:
-                            # If we can't stat, don't delete to be safe
-                            print(f"Stat failed for {file_path}: {e}")
-                            continue
-                            
-                    orphans.append(file_path)
-            
-            # 4. Delete orphans (if not dry run)
-            if not dry_run and orphans:
-                for file_path in orphans:
-                    try:
-                        io.delete(file_path)
-                    except Exception as e:
-                        # Fallback for local delete
-                        if file_path.startswith("file://"):
-                            try:
-                                import os
-                                os.remove(file_path[7:])
-                            except:
-                                print(f"Failed to delete {file_path}: {e}")
-                        else:
-                             print(f"Failed to delete {file_path}: {e}")
-            
+                            os.remove(path[7:])
+                            return
+                        except OSError as os_err:
+                            logger.error("Failed to delete %s: %s", path, os_err)
+                            return
+                    logger.error("Failed to delete %s: %s", path, e)
+
+            if max_workers and max_workers > 1:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(_delete, p) for p in orphans]
+                    for future in as_completed(futures):
+                        future.result()
+            else:
+                for path in orphans:
+                    _delete(path)
+
+            logger.info("Removed %d orphan file(s)", len(orphans))
             return orphans
-            
+
+        except MaintenanceError:
+            raise
         except Exception as e:
-            raise NotImplementedError(f"Orphan file removal not supported: {e}")
-            
-    def _parallel_delete(self, max_workers: int):
-        """Create a parallel delete function"""
-        executor = ThreadPoolExecutor(max_workers=max_workers)
-        
-        def delete_files(files):
-            # files is a list of paths
-            # We need a filesystem instance to delete
-            # PyIceberg usually passes a callable that takes a list
-            
-            # This is a placeholder for actual parallel delete logic
-            # which depends on the FileIO implementation
-            pass
-            
-        return None # Use default for now as custom delete func is complex
+            raise MaintenanceError(f"Orphan file removal failed: {e}") from e
+
+    def _list_files(self, location: str) -> Set[str]:
+        """List every non-directory file under ``location``."""
+        io = self.table.io
+        results: Set[str] = set()
+
+        path_to_list = location[7:] if location.startswith("file://") else location
+
+        for candidate in (path_to_list, location):
+            try:
+                for file_info in io.list_prefix(candidate):
+                    if not file_info.is_directory:
+                        results.add(file_info.path)
+                if results:
+                    return results
+            except Exception as e:
+                logger.debug("list_prefix(%s) failed: %s", candidate, e)
+
+        # Fallback for local filesystems where FileIO doesn't implement listing.
+        if not results and location.startswith("file://"):
+            local_path = location[7:]
+            if os.path.exists(local_path):
+                for root, _dirs, files in os.walk(local_path):
+                    for name in files:
+                        results.add(f"file://{os.path.join(root, name)}")
+
+        return results
+
+
+def utc_ms(dt: datetime) -> int:
+    """Convert a datetime to a millisecond epoch timestamp (UTC)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+__all__ = ["GarbageCollector", "utc_ms"]

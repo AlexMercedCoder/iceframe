@@ -3,9 +3,10 @@ Monitoring and observability for IceFrame.
 """
 
 import time
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 
 @dataclass
 class QueryMetrics:
@@ -19,13 +20,13 @@ class QueryMetrics:
     bytes_scanned: int = 0
     cache_hit: bool = False
     error: Optional[str] = None
-    
+
     def duration_ms(self) -> float:
         """Get query duration in milliseconds"""
         if self.end_time:
             return (self.end_time - self.start_time) * 1000
         return 0
-        
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
@@ -44,29 +45,29 @@ class MetricsCollector:
     """
     Collect and track query metrics.
     """
-    
+
     def __init__(self):
         self.metrics: Dict[str, QueryMetrics] = {}
         self._query_counter = 0
-        
+
     def start_query(self, table_name: str) -> str:
         """
         Start tracking a query.
-        
+
         Returns:
             Query ID
         """
         self._query_counter += 1
         query_id = f"query_{self._query_counter}_{int(time.time())}"
-        
+
         self.metrics[query_id] = QueryMetrics(
             query_id=query_id,
             table_name=table_name,
             start_time=time.time()
         )
-        
+
         return query_id
-        
+
     def end_query(
         self,
         query_id: str,
@@ -76,7 +77,7 @@ class MetricsCollector:
     ):
         """
         End query tracking.
-        
+
         Args:
             query_id: Query ID from start_query
             rows_returned: Number of rows returned
@@ -89,16 +90,16 @@ class MetricsCollector:
             metric.rows_returned = rows_returned
             metric.cache_hit = cache_hit
             metric.error = error
-            
+
     def get_stats(self) -> Dict[str, Any]:
         """Get aggregate statistics"""
         if not self.metrics:
             return {"total_queries": 0}
-            
+
         durations = [m.duration_ms() for m in self.metrics.values() if m.end_time]
         cache_hits = sum(1 for m in self.metrics.values() if m.cache_hit)
         errors = sum(1 for m in self.metrics.values() if m.error)
-        
+
         return {
             "total_queries": len(self.metrics),
             "avg_duration_ms": sum(durations) / len(durations) if durations else 0,
@@ -106,7 +107,7 @@ class MetricsCollector:
             "error_rate": errors / len(self.metrics) if self.metrics else 0,
             "total_rows_returned": sum(m.rows_returned for m in self.metrics.values())
         }
-        
+
     def get_recent_queries(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent query metrics"""
         sorted_metrics = sorted(

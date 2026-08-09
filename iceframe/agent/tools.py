@@ -2,13 +2,13 @@
 Tool definitions for IceFrame AI Agent.
 """
 
-from typing import List, Dict, Any
-import json
+from typing import Any, Dict, List
+
 
 def get_tool_definitions() -> List[Dict[str, Any]]:
     """
     Get tool definitions for LLM function calling.
-    
+
     Returns:
         List of tool definitions in OpenAI format
     """

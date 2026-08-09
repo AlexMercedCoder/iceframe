@@ -3,27 +3,29 @@ Tests for additional procedures (Rollback, Ingestion, CatalogOps).
 """
 
 import pytest
-from iceframe.rollback import RollbackManager
-from iceframe.ingestion import DataIngestion
+
 from iceframe.catalog_ops import CatalogOperations
+from iceframe.ingestion import DataIngestion
+from iceframe.rollback import RollbackManager
+
 
 def test_rollback_manager(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
     """Test RollbackManager"""
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
-    
+
     # Snapshot 1
     ice_frame.append_to_table(test_table_name, sample_data)
     table = ice_frame.get_table(test_table_name)
     snap1 = table.current_snapshot().snapshot_id
-    
+
     # Snapshot 2
     ice_frame.append_to_table(test_table_name, sample_data)
     table.refresh()
     snap2 = table.current_snapshot().snapshot_id
-    
+
     assert snap1 != snap2
-    
+
     # Rollback to 1
     rm = RollbackManager(table)
     try:
@@ -36,7 +38,7 @@ def test_rollback_manager(ice_frame, test_table_name, sample_schema, sample_data
 def test_catalog_ops(ice_frame):
     """Test CatalogOperations"""
     ops = CatalogOperations(ice_frame.catalog)
-    
+
     # Register table is hard to test without a valid metadata file URL
     # Just check if method exists and raises expected error or works
     try:
@@ -50,9 +52,9 @@ def test_ingestion(ice_frame, test_table_name, sample_schema, cleanup_table):
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
     table = ice_frame.get_table(test_table_name)
-    
+
     ingestion = DataIngestion(table)
-    
+
     try:
         ingestion.add_files(["/path/to/file.parquet"])
     except NotImplementedError:

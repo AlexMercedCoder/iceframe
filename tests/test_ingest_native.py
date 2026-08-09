@@ -1,8 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import polars as pl
-from iceframe.ingest import read_csv, read_json, read_parquet, read_ipc, read_avro, read_orc
+
+import pytest
+
 from iceframe.core import IceFrame
+from iceframe.ingest import read_avro, read_csv, read_ipc, read_json, read_orc, read_parquet
+
 
 @pytest.fixture
 def mock_polars():
@@ -47,9 +49,9 @@ def test_insert_from_file_csv(mock_iceframe):
     with patch('iceframe.ingest.read_csv') as mock_read:
         mock_df = MagicMock()
         mock_read.return_value = mock_df
-        
+
         mock_iceframe.insert_from_file("test_table", "data.csv")
-        
+
         mock_read.assert_called_once_with("data.csv")
         mock_iceframe._operations.append_to_table.assert_called_once_with("test_table", mock_df, branch=None)
 
@@ -57,9 +59,9 @@ def test_insert_from_file_inferred(mock_iceframe):
     with patch('iceframe.ingest.read_parquet') as mock_read:
         mock_df = MagicMock()
         mock_read.return_value = mock_df
-        
+
         mock_iceframe.insert_from_file("test_table", "data.parquet")
-        
+
         mock_read.assert_called_once_with("data.parquet")
         mock_iceframe._operations.append_to_table.assert_called_once_with("test_table", mock_df, branch=None)
 
@@ -67,9 +69,9 @@ def test_create_table_from_orc(mock_iceframe):
     with patch('iceframe.ingest.read_orc') as mock_read:
         mock_df = MagicMock()
         mock_read.return_value = mock_df
-        
+
         mock_iceframe.create_table_from_orc("new_table", "data.orc")
-        
+
         mock_read.assert_called_once_with("data.orc")
         mock_iceframe._operations.create_table.assert_called_once()
         mock_iceframe._operations.append_to_table.assert_called_once_with("new_table", mock_df, branch=None)

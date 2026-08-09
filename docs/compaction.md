@@ -21,7 +21,36 @@ ice.compact_data_files("sales", target_file_size_mb=128)
 
 -   **Partition-by-Partition**: Reads and rewrites one partition at a time to prevent OOM errors on large tables.
 -   **Smart Partition Skipping**: Analyzing partition stats (file count) to avoid compacting healthy partitions unnecessarily.
--   **Filtering**: Optionally compact only specific partitions/files (programmatic API).
+-   **Scoped rewrites**: `filter_expr` / `partition_filter` restrict the rewrite to matching rows *and* scope the `overwrite_filter` to the same predicate.
+-   **Honours `target_file_size_mb`**: sets Iceberg's `write.target-file-size-bytes` for the rewrite.
+
+> **Fixed in 0.13.0 — silent data loss.** Before 0.13.0 the unpartitioned
+> rewrite path called `table.overwrite(arrow_table)` with **no**
+> `overwrite_filter`. `overwrite` defaults to `AlwaysTrue`, so a compaction
+> scoped by `filter_expr` replaced the **entire table** with the matching
+> subset — a 6-row table compacted with `"v > 30"` was left with 3 rows, and
+> the call reported success. `z_order_optimize` had the same shape. Both are
+> fixed and covered by regression tests. Upgrade before using scoped
+> compaction.
+
+### Filters must be fully pushable
+
+A compaction filter defines which rows may be *replaced*. A filter that can only
+be partially pushed to Iceberg would scope the overwrite to a **superset** of
+the intended rows, deleting data outside the scope. IceFrame therefore rejects
+such filters with `CompactionError` rather than applying them approximately:
+
+```python
+from iceframe import col, CompactionError
+
+# Column-to-column comparisons cannot be pushed to Iceberg.
+try:
+    ice.compact_data_files("sales", filter_expr=(col("a") > col("b")))
+except CompactionError as e:
+    print(e)
+```
+
+Iceberg predicate strings (`"v > 30"`) and simple `Expression`s are fine.
 
 ### Advanced Configuration
 
@@ -34,7 +63,7 @@ ice.compact_data_files("sales", target_file_size_mb=128, min_input_files=5)
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `target_file_size_mb` | int | 128 | Target output file size in MB. |
+| `target_file_size_mb` | int | 128 | Target output file size in MB. Sets `write.target-file-size-bytes` on the table for the rewrite. (Before 0.13.0 this argument was accepted and completely ignored.) |
 | `min_input_files` | int | 1 | Minimum number of files in a partition to trigger compaction. Partitions with fewer files are skipped. |
 | `partition_filter` | dict | None | Dictionary of col=value to only compact specific partitions. Example: `{"region": "us"}` |
 | `deduplicate` | bool | False | If True, drops duplicate rows within the compacted partition. |

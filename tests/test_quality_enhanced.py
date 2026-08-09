@@ -1,6 +1,8 @@
-import pytest
 import polars as pl
+import pytest
+
 from iceframe.quality import DataValidator
+
 
 @pytest.fixture
 def validator():
@@ -19,7 +21,7 @@ def sample_df():
 
 def test_expect_unique(validator, sample_df):
     assert validator.expect_column_values_to_be_unique(sample_df, "id")
-    
+
     df_dup = pl.DataFrame({"id": [1, 1, 2]})
     assert not validator.expect_column_values_to_be_unique(df_dup, "id")
 
@@ -29,7 +31,7 @@ def test_expect_between(validator, sample_df):
 
 def test_expect_regex(validator, sample_df):
     assert validator.expect_column_values_to_match_regex(sample_df, "email", r"^.+@.+\..+$")
-    
+
     df_bad = pl.DataFrame({"email": ["bad_email"]})
     assert not validator.expect_column_values_to_match_regex(df_bad, "email", r"@")
 

@@ -2,15 +2,17 @@
 Streaming support for IceFrame.
 """
 
-from typing import Optional, Dict, Any
-import polars as pl
 import time
+from typing import Any, Dict
+
+import polars as pl
+
 
 class StreamingWriter:
     """
     Stream data to Iceberg tables with micro-batching.
     """
-    
+
     def __init__(
         self,
         ice_frame,
@@ -20,7 +22,7 @@ class StreamingWriter:
     ):
         """
         Initialize streaming writer.
-        
+
         Args:
             ice_frame: IceFrame instance
             table_name: Target table name
@@ -33,51 +35,51 @@ class StreamingWriter:
         self.flush_interval = flush_interval_seconds
         self._buffer = []
         self._last_flush = time.time()
-        
+
         # Auto-compaction settings
         self.auto_compact = False
         self.compact_every_n_flushes = 10
         self._flushes_since_compact = 0
-        
+
     def enable_auto_compaction(self, every_n_flushes: int = 10):
         """
         Enable auto-compaction.
-        
+
         Args:
             every_n_flushes: Run compaction after this many flushes
         """
         self.auto_compact = True
         self.compact_every_n_flushes = every_n_flushes
-        
+
     def write(self, record: Dict[str, Any]):
         """
         Write a single record.
-        
+
         Args:
             record: Dictionary representing a row
         """
         self._buffer.append(record)
-        
+
         # Flush if batch size reached or interval elapsed
-        if (len(self._buffer) >= self.batch_size or 
+        if (len(self._buffer) >= self.batch_size or
             time.time() - self._last_flush >= self.flush_interval):
             self.flush()
-            
+
     def flush(self):
         """Flush buffered records to table"""
         if not self._buffer:
             return
-            
+
         df = pl.DataFrame(self._buffer)
         self.ice_frame.append_to_table(self.table_name, df)
         self._buffer = []
         self._last_flush = time.time()
-        
+
         self._flushes_since_compact += 1
-        
+
         if self.auto_compact and self._flushes_since_compact >= self.compact_every_n_flushes:
             self._run_compaction()
-            
+
     def _run_compaction(self):
         """Run compaction job"""
         try:
@@ -94,7 +96,7 @@ class StreamingWriter:
             pass
         finally:
             self._flushes_since_compact = 0
-        
+
     def close(self):
         """Close writer and flush remaining records"""
         self.flush()
@@ -109,7 +111,7 @@ def stream_from_kafka(
 ):
     """
     Stream data from Kafka to Iceberg table.
-    
+
     Args:
         ice_frame: IceFrame instance
         kafka_topic: Kafka topic to consume from
@@ -118,19 +120,20 @@ def stream_from_kafka(
         batch_size: Records per batch
     """
     try:
-        from kafka import KafkaConsumer
         import json
+
+        from kafka import KafkaConsumer
     except ImportError:
-        raise ImportError("kafka-python required. Install with: pip install 'iceframe[streaming]'")
-        
+        raise ImportError("kafka-python required. Install with: pip install 'iceframe[streaming]'") from None
+
     consumer = KafkaConsumer(
         kafka_topic,
         **kafka_config,
         value_deserializer=lambda m: json.loads(m.decode('utf-8'))
     )
-    
+
     writer = StreamingWriter(ice_frame, table_name, batch_size=batch_size)
-    
+
     try:
         for message in consumer:
             writer.write(message.value)

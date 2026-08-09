@@ -2,12 +2,15 @@
 Core IceFrame class - Main entry point for the library
 """
 
-from typing import Dict, Any, Optional, List, Union, Type
-import pyarrow as pa
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, Union
+
 import polars as pl
+import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
+
 try:
     from pydantic import BaseModel
     HAS_PYDANTIC = True
@@ -16,12 +19,21 @@ except ImportError:
     BaseModel = Any # type: ignore
 
 
-from iceframe.utils import validate_catalog_config, normalize_table_identifier, format_table_identifier
-from iceframe.operations import TableOperations
-
+from iceframe.exceptions import ValidationError
 from iceframe.export import DataExporter
-from iceframe.parallel import ParallelExecutor
 from iceframe.memory import MemoryManager
+from iceframe.operations import TableOperations
+from iceframe.parallel import ParallelExecutor
+from iceframe.utils import validate_catalog_config
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:  # pragma: no cover - imports for type annotations only
+    from iceframe.evolution import PartitionEvolution
+    from iceframe.metadata import MetadataInspector
+    from iceframe.partition import PartitionManager
+    from iceframe.query import QueryBuilder
+    from iceframe.schema import SchemaEvolution
 
 
 class IceFrame:
@@ -75,14 +87,14 @@ class IceFrame:
         uri = self.catalog_config.get("uri", "unknown")
         catalog_type = self.catalog_config.get("type", "unknown")
         warehouse = self.catalog_config.get("warehouse", "unknown")
-        
+
         # Get namespaces
         try:
             namespaces = self.list_namespaces()
             ns_list = "<ul>" + "".join([f"<li>{ns[0]}</li>" for ns in namespaces]) + "</ul>"
         except Exception:
             ns_list = "Could not list namespaces"
-            
+
         return f"""
         <div style="border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px;">
             <h3>IceFrame Connection</h3>
@@ -95,7 +107,7 @@ class IceFrame:
         </div>
         """
 
-    
+
     def create_table(
         self,
         table_name: str,
@@ -106,7 +118,7 @@ class IceFrame:
     ) -> Table:
         """
         Create a new Iceberg table.
-        
+
         Args:
             table_name: Name of the table (can include namespace: 'namespace.table')
             schema: Table schema - can be PyIceberg Schema, PyArrow Schema,
@@ -114,10 +126,10 @@ class IceFrame:
             partition_spec: Optional list of partition field tuples
             sort_order: Optional list of sort field names
             properties: Optional table properties
-            
+
         Returns:
             Created Iceberg Table object
-            
+
         Example:
             >>> # Create with PyArrow schema
             >>> schema = pa.schema([
@@ -138,7 +150,7 @@ class IceFrame:
             sort_order=sort_order,
             properties=properties,
         )
-    
+
     def create_table_from_delta(
         self,
         table_name: str,
@@ -148,13 +160,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Delta Lake table.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Delta table
             version: Optional Delta table version
             **kwargs: Additional arguments for read_delta
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -172,12 +184,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Lance dataset.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Lance dataset
             **kwargs: Additional arguments for read_lance
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -195,12 +207,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Vortex file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Vortex file
             **kwargs: Additional arguments for read_vortex
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -219,13 +231,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an Excel file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Excel file
             sheet_name: Name of the sheet to read
             **kwargs: Additional arguments for read_excel
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -245,14 +257,14 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Google Sheet.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             url: URL of the Google Sheet
             credentials: Path to service account JSON or credentials object
             sheet_name: Optional worksheet name
             **kwargs: Additional arguments for read_gsheets
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -270,12 +282,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Hudi table.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Hudi table
             **kwargs: Additional arguments for read_hudi
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -293,12 +305,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a CSV file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to CSV file
             **kwargs: Additional arguments for read_csv
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -316,12 +328,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a JSON file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to JSON file
             **kwargs: Additional arguments for read_json
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -339,12 +351,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Parquet file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Parquet file
             **kwargs: Additional arguments for read_parquet
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -362,12 +374,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an IPC/Arrow file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to IPC file
             **kwargs: Additional arguments for read_ipc
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -385,12 +397,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an Avro file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Avro file
             **kwargs: Additional arguments for read_avro
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -399,7 +411,7 @@ class IceFrame:
         table = self.create_table(table_name, schema=df)
         self.append_to_table(table_name, df)
         return table
-    
+
     def create_table_from_orc(
         self,
         table_name: str,
@@ -408,12 +420,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an ORC file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to ORC file
             **kwargs: Additional arguments for read_orc
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -432,13 +444,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a SQL query.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             query: SQL query
             connection_uri: Database connection URI
             **kwargs: Additional arguments for read_sql
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -456,12 +468,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an XML file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to XML file
             **kwargs: Additional arguments for read_xml
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -479,12 +491,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a SAS file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to SAS file
             **kwargs: Additional arguments for read_sas
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -502,12 +514,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an SPSS file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to SPSS file
             **kwargs: Additional arguments for read_spss
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -525,12 +537,12 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a Stata file.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to Stata file
             **kwargs: Additional arguments for read_stata
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -549,13 +561,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a REST API.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             url: URL to fetch data from
             json_key: Optional key to extract list of records
             **kwargs: Additional arguments for read_api
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -574,13 +586,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from a HuggingFace dataset.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             dataset_name: Name of the dataset
             split: Split to read
             **kwargs: Additional arguments for read_huggingface
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -599,13 +611,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from an HTML table.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             url: URL or HTML string
             match: Optional regex to match table
             **kwargs: Additional arguments for read_html
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -622,11 +634,11 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from the clipboard.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             **kwargs: Additional arguments for read_clipboard
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -645,13 +657,13 @@ class IceFrame:
     ) -> Table:
         """
         Create an Iceberg table from files in a folder.
-        
+
         Args:
             table_name: Name of the new Iceberg table
             path: Path to folder
             pattern: Glob pattern
             **kwargs: Additional arguments for read_folder
-            
+
         Returns:
             Created Iceberg Table
         """
@@ -671,7 +683,7 @@ class IceFrame:
     ) -> None:
         """
         Insert data from a file into an existing table.
-        
+
         Args:
             table_name: Name of the table
             path: Path to the file
@@ -680,12 +692,13 @@ class IceFrame:
             **kwargs: Additional arguments for the specific read function
         """
         import os
+
         from iceframe import ingest
-        
+
         if format is None:
             _, ext = os.path.splitext(path)
             format = ext.lower().lstrip('.')
-            
+
         if format == 'csv':
             df = ingest.read_csv(path, **kwargs)
         elif format == 'json':
@@ -722,36 +735,36 @@ class IceFrame:
             df = ingest.read_stata(path, **kwargs)
         else:
             raise ValueError(f"Unsupported file format: {format}")
-            
+
         self.append_to_table(table_name, df, branch=branch)
 
     def query_datafusion(self, sql: str, tables: Optional[list[str]] = None) -> pl.DataFrame:
         """
         Execute a SQL query using Apache DataFusion.
-        
+
         Args:
             sql: SQL query to execute
-            tables: List of table names to register before querying. 
+            tables: List of table names to register before querying.
                    If None, attempts to parse table names from SQL (basic) or requires manual registration.
-                   
+
         Returns:
             Polars DataFrame result
         """
         from iceframe.datafusion_ops import DataFusionManager
-        
+
         dfm = DataFusionManager(self)
-        
+
         if tables:
             for table in tables:
                 dfm.register_table(table)
-        
+
         return dfm.query(sql)
-    
+
     @property
     def distribute(self):
         """
         Access distributed processing capabilities (Ray).
-        
+
         Returns:
             RayExecutor instance
         """
@@ -764,7 +777,7 @@ class IceFrame:
     def viz(self):
         """
         Access visualization capabilities.
-        
+
         Returns:
             Visualizer instance
         """
@@ -775,7 +788,7 @@ class IceFrame:
     def quality(self):
         """
         Access data quality validator.
-        
+
         Returns:
             DataValidator instance
         """
@@ -793,7 +806,7 @@ class IceFrame:
     ) -> pl.DataFrame:
         """
         Read data from an Iceberg table.
-        
+
         Args:
             table_name: Name of the table to read
             columns: Optional list of columns to select
@@ -801,10 +814,10 @@ class IceFrame:
             limit: Optional row limit
             snapshot_id: Optional snapshot ID for time travel
             as_of_timestamp: Optional timestamp for time travel
-            
+
         Returns:
             Polars DataFrame containing the data
-            
+
         Example:
             >>> df = ice.read_table("my_namespace.my_table", columns=["id", "name"])
             >>> df = ice.read_table("my_table", limit=100)
@@ -817,7 +830,7 @@ class IceFrame:
             snapshot_id=snapshot_id,
             as_of_timestamp=as_of_timestamp,
         )
-    
+
     def append_to_table(
         self,
         table_name: str,
@@ -827,18 +840,18 @@ class IceFrame:
     ) -> None:
         """
         Append data to an existing Iceberg table.
-        
+
         Args:
             table_name: Name of the table
             data: Data to append (Polars DataFrame, PyArrow Table, or dict)
             branch: Optional branch name to write to (for WAP pattern)
             validators: Optional list of validation checks (functions or Polars expressions)
                         that must pass before writing.
-            
+
         Example:
             >>> df = pl.DataFrame({"id": [1], "name": ["Alice"]})
             >>> ice.append_to_table(
-            ...     "my_table", 
+            ...     "my_table",
             ...     df,
             ...     validators=[pl.col("id") > 0]
             ... )
@@ -846,7 +859,7 @@ class IceFrame:
         # Validate data if validators provided
         if validators:
             from iceframe.quality import DataValidator
-            
+
             # Ensure data is Polars DataFrame for validation
             if isinstance(data, pl.DataFrame):
                 df = data
@@ -858,22 +871,25 @@ class IceFrame:
                  # Try to convert or assume it works
                  try:
                      df = pl.DataFrame(data)
-                 except:
-                     raise ValueError(f"Could not convert data of type {type(data)} to Polars DataFrame for validation")
-            
+                 except Exception as e:
+                     raise ValidationError(
+                         f"Could not convert data of type {type(data)} to a Polars "
+                         f"DataFrame for validation: {e}"
+                     ) from e
+
             validator = DataValidator(self)
             result = validator.validate(df, validators)
-            
+
             if not result["passed"]:
                 details = "\n".join(result["details"])
-                raise ValueError(f"Data validation failed:\n{details}")
-        
+                raise ValidationError(f"Data validation failed:\n{details}")
+
         self._operations.append_to_table(table_name, data, branch=branch)
 
     def insert_items(self, table_name: str, items: List[BaseModel], branch: Optional[str] = None) -> None:
         """
         Insert a list of Pydantic models into a table.
-        
+
         Args:
             table_name: Name of the table
             items: List of Pydantic model instances
@@ -881,15 +897,15 @@ class IceFrame:
         """
         if not items:
             return
-            
+
         # Convert items to dicts
         data = [item.model_dump() for item in items]
-        
+
         # Create DataFrame
         df = pl.DataFrame(data)
-        
+
         self.append_to_table(table_name, df, branch=branch)
-    
+
     def overwrite_table(
         self,
         table_name: str,
@@ -897,17 +913,17 @@ class IceFrame:
     ) -> None:
         """
         Overwrite table data.
-        
+
         Args:
             table_name: Name of the table
             data: Data to write (Polars DataFrame, PyArrow Table, or dict)
-            
+
         Example:
             >>> df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
             >>> ice.overwrite_table("my_table", df)
         """
         self._operations.overwrite_table(table_name, data)
-    
+
     def delete_from_table(
         self,
         table_name: str,
@@ -915,129 +931,160 @@ class IceFrame:
     ) -> None:
         """
         Delete rows from a table based on filter expression.
-        
+
         Args:
             table_name: Name of the table
             filter_expr: Filter expression for rows to delete
-            
+
         Example:
             >>> ice.delete_from_table("my_table", "id < 100")
         """
         self._operations.delete_from_table(table_name, filter_expr)
-    
+
     def drop_table(self, table_name: str) -> None:
         """
         Drop (delete) a table from the catalog.
-        
+
         Args:
             table_name: Name of the table to drop
-            
+
         Example:
             >>> ice.drop_table("my_namespace.my_table")
         """
         self._operations.drop_table(table_name)
-    
+
     def list_tables(self, namespace: str = "default") -> List[str]:
         """
         List all tables in a namespace.
-        
+
         Args:
             namespace: Namespace to list tables from
-            
+
         Returns:
             List of table names
-            
+
         Example:
             >>> tables = ice.list_tables("my_namespace")
         """
         return self._operations.list_tables(namespace)
-    
+
     def table_exists(self, table_name: str) -> bool:
         """
         Check if a table exists.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             True if table exists, False otherwise
-            
+
         Example:
             >>> if ice.table_exists("my_table"):
             ...     print("Table exists!")
         """
         return self._operations.table_exists(table_name)
-    
+
     def get_table(self, table_name: str) -> Table:
         """
         Get the underlying PyIceberg Table object.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             PyIceberg Table object
-            
+
         Example:
             >>> table = ice.get_table("my_table")
             >>> print(table.schema())
         """
         return self._operations.get_table(table_name)
-    
+
     # Maintenance operations
-    
+
     def expire_snapshots(
         self,
         table_name: str,
         older_than_days: int = 7,
         retain_last: int = 1,
-    ) -> None:
+    ) -> List[int]:
         """
         Expire old snapshots from a table.
-        
+
+        Uses PyIceberg's native ``Table.maintenance.expire_snapshots``. Branch
+        and tag heads (including the current snapshot) are always protected.
+
         Args:
             table_name: Name of the table
-            older_than_days: Remove snapshots older than this many days
-            retain_last: Always retain at least this many snapshots
-            
+            older_than_days: Only expire snapshots older than this many days.
+                Pass ``0`` to expire by ``retain_last`` alone.
+            retain_last: Always retain at least this many of the newest
+                snapshots.
+
+        Returns:
+            The list of expired snapshot ids.
+
         Example:
             >>> ice.expire_snapshots("my_table", older_than_days=30, retain_last=5)
+            [123456789]
         """
+        from datetime import datetime, timedelta, timezone
+
         from iceframe.gc import GarbageCollector
-        from datetime import datetime, timedelta
-        
+
         table = self.get_table(table_name)
         gc = GarbageCollector(table)
-        
+
         older_than_ms = int(
-            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
+            (datetime.now(timezone.utc) - timedelta(days=older_than_days)).timestamp() * 1000
         )
-        
-        gc.expire_snapshots(older_than_ms=older_than_ms, retain_last=retain_last)
-    
-    def remove_orphan_files(self, table_name: str, older_than_days: int = 3) -> None:
+
+        return gc.expire_snapshots(older_than_ms=older_than_ms, retain_last=retain_last)
+
+    def remove_orphan_files(
+        self,
+        table_name: str,
+        older_than_days: int = 3,
+        dry_run: bool = True,
+        max_workers: int = 4,
+    ) -> List[str]:
         """
-        Remove orphaned data files from a table.
-        
+        Find (and optionally delete) files under the table location that no
+        snapshot or metadata entry references.
+
+        ``dry_run`` defaults to ``True`` — this permanently deletes files, so
+        deletion is opt-in.
+
         Args:
             table_name: Name of the table
-            older_than_days: Remove files older than this many days
-            
+            older_than_days: Only consider files older than this many days.
+                Files whose age can't be determined are always skipped.
+            dry_run: When ``True`` (default), report candidates without
+                deleting.
+            max_workers: Parallelism for the delete phase.
+
+        Returns:
+            The list of orphan file paths.
+
         Example:
-            >>> ice.remove_orphan_files("my_table", older_than_days=7)
+            >>> ice.remove_orphan_files("my_table", older_than_days=7)  # dry run
+            >>> ice.remove_orphan_files("my_table", older_than_days=7, dry_run=False)
         """
+        from datetime import datetime, timedelta, timezone
+
         from iceframe.gc import GarbageCollector
-        from datetime import datetime, timedelta
-        
+
         table = self.get_table(table_name)
         gc = GarbageCollector(table)
-        
+
         older_than_ms = int(
-            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
+            (datetime.now(timezone.utc) - timedelta(days=older_than_days)).timestamp() * 1000
         )
-        
-        return gc.remove_orphan_files(older_than_ms=older_than_ms)
-    
+
+        return gc.remove_orphan_files(
+            older_than_ms=older_than_ms, dry_run=dry_run, max_workers=max_workers
+        )
+
     def compact_data_files(
         self,
         table_name: str,
@@ -1051,7 +1098,7 @@ class IceFrame:
     ) -> dict:
         """
         Compact data files in a table.
-        
+
         Args:
             table_name: Name of the table
             target_file_size_mb: Target size of files in MB
@@ -1063,7 +1110,7 @@ class IceFrame:
             **kwargs: Extra arguments (e.g. `dry_run`, `retries`, `compression`)
         """
         from iceframe.compaction import CompactionManager
-        
+
         table = self.get_table(table_name)
         compactor = CompactionManager(table)
         return compactor.bin_pack(
@@ -1075,11 +1122,11 @@ class IceFrame:
             max_workers=max_workers,
             **kwargs
         )
-        
+
     def z_order_optimize(self, table_name: str, columns: list, **kwargs) -> dict:
         """
         Optimize table layout using Z-Order clustering (approximate).
-        
+
         Args:
             table_name: Table to optimize
             columns: List of columns to cluster
@@ -1087,11 +1134,11 @@ class IceFrame:
         from iceframe.compaction import CompactionManager
         table = self.get_table(table_name)
         return CompactionManager(table).z_order_optimize(columns, **kwargs)
-        
+
     def configure_bloom_filters(self, table_name: str, columns: list, fpp: float = 0.01) -> dict:
         """
         Enable Bloom Filters for specific columns.
-        
+
         Args:
             table_name: Table name
             columns: Columns to index
@@ -1104,18 +1151,18 @@ class IceFrame:
     def rewrite_manifests(self, table_name: str) -> None:
         """
         Rewrite manifest files to optimize metadata.
-        
+
         Args:
             table_name: Name of the table
         """
         from iceframe.compaction import CompactionManager
         table = self.get_table(table_name)
         compactor = CompactionManager(table)
-        
+
         compactor.rewrite_manifests()
-    
+
     # Export operations
-    
+
     def to_parquet(
         self,
         table_name: str,
@@ -1125,19 +1172,19 @@ class IceFrame:
     ) -> None:
         """
         Export table data to Parquet file.
-        
+
         Args:
             table_name: Name of the table
             output_path: Path to output Parquet file
             columns: Optional list of columns to export
             filter_expr: Optional filter expression
-            
+
         Example:
             >>> ice.to_parquet("my_table", "/tmp/output.parquet")
         """
         df = self.read_table(table_name, columns=columns, filter_expr=filter_expr)
         self._exporter.to_parquet(df, output_path)
-    
+
     def to_csv(
         self,
         table_name: str,
@@ -1147,19 +1194,19 @@ class IceFrame:
     ) -> None:
         """
         Export table data to CSV file.
-        
+
         Args:
             table_name: Name of the table
             output_path: Path to output CSV file
             columns: Optional list of columns to export
             filter_expr: Optional filter expression
-            
+
         Example:
             >>> ice.to_csv("my_table", "/tmp/output.csv")
         """
         df = self.read_table(table_name, columns=columns, filter_expr=filter_expr)
         self._exporter.to_csv(df, output_path)
-    
+
     def to_json(
         self,
         table_name: str,
@@ -1169,13 +1216,13 @@ class IceFrame:
     ) -> None:
         """
         Export table data to JSON file.
-        
+
         Args:
             table_name: Name of the table
             output_path: Path to output JSON file
             columns: Optional list of columns to export
             filter_expr: Optional filter expression
-            
+
         Example:
             >>> ice.to_json("my_table", "/tmp/output.json")
         """
@@ -1185,18 +1232,194 @@ class IceFrame:
     def query(self, table_name: str) -> 'QueryBuilder':
         """
         Start a query builder for a table.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             QueryBuilder instance
         """
         from iceframe.query import QueryBuilder
         return QueryBuilder(self._operations, table_name)
 
+    # ------------------------------------------------------------------
+    # Native PyIceberg delegation: upsert, transactions, metadata tables
+    # ------------------------------------------------------------------
+
+    def upsert(
+        self,
+        table_name: str,
+        data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
+        join_cols: Optional[List[str]] = None,
+        when_matched_update_all: bool = True,
+        when_not_matched_insert_all: bool = True,
+    ) -> Dict[str, int]:
+        """
+        MERGE rows into a table using PyIceberg's native, atomic upsert.
+
+        Only the data files containing matching rows are rewritten, and the
+        whole operation is a single commit — unlike
+        :meth:`QueryBuilder.merge`'s copy-on-write fallback, which reads and
+        overwrites the entire table.
+
+        Args:
+            table_name: Target table.
+            data: Source rows.
+            join_cols: Match key. Defaults to the table's identifier fields.
+            when_matched_update_all: Update matched rows from the source.
+            when_not_matched_insert_all: Insert source rows with no match.
+
+        Returns:
+            ``{"rows_updated": int, "rows_inserted": int}``
+
+        Example:
+            >>> ice.upsert("db.users", new_rows, join_cols=["id"])
+            {'rows_updated': 2, 'rows_inserted': 1}
+        """
+        return self._operations.upsert(
+            table_name,
+            data,
+            join_cols=join_cols,
+            when_matched_update_all=when_matched_update_all,
+            when_not_matched_insert_all=when_not_matched_insert_all,
+        )
+
+    def transaction(self, table_name: str):
+        """
+        Open a multi-operation atomic transaction on a table.
+
+        Everything staged inside the ``with`` block commits together, so a
+        schema change plus an append is a single snapshot instead of two::
+
+            with ice.transaction("db.events") as txn:
+                txn.set_properties({"owner": "data-eng"})
+                txn.append(arrow_table)
+
+        Returns:
+            PyIceberg ``Transaction`` context manager.
+        """
+        return self._operations.transaction(table_name)
+
+    def inspect(self, table_name: str) -> 'MetadataInspector':
+        """
+        Access Iceberg metadata tables as Polars DataFrames.
+
+        Args:
+            table_name: Name of the table.
+
+        Returns:
+            :class:`~iceframe.metadata.MetadataInspector` exposing
+            ``snapshots()``, ``files()``, ``partitions()``, ``manifests()``,
+            ``history()``, ``refs()`` and ``entries()``.
+
+        Example:
+            >>> ice.inspect("db.events").snapshots()
+        """
+        from iceframe.metadata import MetadataInspector
+        return MetadataInspector(self.get_table(table_name))
+
+    # ------------------------------------------------------------------
+    # DataFrame ergonomics
+    # ------------------------------------------------------------------
+
+    def to_arrow(
+        self,
+        table_name: str,
+        columns: Optional[List[str]] = None,
+        filter_expr: Optional[Any] = None,
+        limit: Optional[int] = None,
+    ) -> pa.Table:
+        """Read a table as a PyArrow Table."""
+        return self.read_table(
+            table_name, columns=columns, filter_expr=filter_expr, limit=limit
+        ).to_arrow()
+
+    def to_pandas(
+        self,
+        table_name: str,
+        columns: Optional[List[str]] = None,
+        filter_expr: Optional[Any] = None,
+        limit: Optional[int] = None,
+    ):
+        """
+        Read a table as a pandas DataFrame.
+
+        Requires pandas (``pip install pandas``).
+        """
+        return self.read_table(
+            table_name, columns=columns, filter_expr=filter_expr, limit=limit
+        ).to_pandas()
+
+    def lazy(
+        self,
+        table_name: str,
+        columns: Optional[List[str]] = None,
+        filter_expr: Optional[Any] = None,
+    ) -> pl.LazyFrame:
+        """
+        Return a Polars ``LazyFrame`` over a table.
+
+        Note: the Iceberg scan itself is eager (predicate/projection pushdown
+        happens through ``columns``/``filter_expr``); what you get back is a
+        lazy plan over the materialised frame, which is still useful for
+        composing further Polars operations without intermediate copies.
+        """
+        return self.read_table(
+            table_name, columns=columns, filter_expr=filter_expr
+        ).lazy()
+
+    def head(self, table_name: str, n: int = 5) -> pl.DataFrame:
+        """Read the first ``n`` rows of a table (pushed into the scan)."""
+        return self.read_table(table_name, limit=n)
+
+    def describe(self, table_name: str) -> pl.DataFrame:
+        """Summary statistics for every column, as Polars' ``describe()``."""
+        return self.read_table(table_name).describe()
+
+    def count_rows(self, table_name: str) -> int:
+        """
+        Total row count, read from table metadata when possible.
+
+        Falls back to a full scan only if the metadata tables are unavailable.
+        """
+        try:
+            files = self.inspect(table_name).files()
+            if "record_count" in files.columns:
+                return int(files["record_count"].sum())
+        except Exception as e:
+            logger.debug("Metadata row count unavailable for %s: %s", table_name, e)
+        return self.read_table(table_name).height
+
+    def scan_batches(
+        self,
+        table_name: str,
+        columns: Optional[List[str]] = None,
+        filter_expr: Optional[Any] = None,
+        limit: Optional[int] = None,
+        snapshot_id: Optional[int] = None,
+        as_of_timestamp: Optional[int] = None,
+        batch_size: Optional[int] = None,
+    ):
+        """
+        Stream a table as PyArrow ``RecordBatch`` objects without materialising
+        the whole result.
+
+        Example:
+            >>> for batch in ice.scan_batches("db.events", columns=["id"]):
+            ...     process(batch)
+        """
+        return self._operations.scan_batches(
+            table_name,
+            columns=columns,
+            filter_expr=filter_expr,
+            limit=limit,
+            snapshot_id=snapshot_id,
+            as_of_timestamp=as_of_timestamp,
+            batch_size=batch_size,
+        )
+
     # Namespace Management
-    
+
     @property
     def namespaces(self):
         """Access namespace manager"""
@@ -1206,24 +1429,24 @@ class IceFrame:
     def create_namespace(self, name: str, properties: Optional[Dict[str, str]] = None) -> None:
         """Create a new namespace"""
         self.namespaces.create_namespace(name, properties)
-        
+
     def drop_namespace(self, name: str) -> None:
         """Drop a namespace"""
         self.namespaces.drop_namespace(name)
-        
+
     def list_namespaces(self, parent: Optional[str] = None) -> List[tuple]:
         """List namespaces"""
         return self.namespaces.list_namespaces(parent)
 
     # Schema Evolution
-    
+
     def alter_table(self, table_name: str) -> 'SchemaEvolution':
         """
         Get schema evolution interface for a table.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             SchemaEvolution instance
         """
@@ -1232,14 +1455,14 @@ class IceFrame:
         return SchemaEvolution(table)
 
     # Partition Management
-    
+
     def partition_by(self, table_name: str) -> 'PartitionManager':
         """
         Get partition management interface for a table.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             PartitionManager instance
         """
@@ -1248,7 +1471,7 @@ class IceFrame:
         return PartitionManager(table)
 
     # Data Quality
-    
+
     @property
     def validator(self):
         """
@@ -1260,7 +1483,7 @@ class IceFrame:
         return DataValidator(self)
 
     # Incremental Processing
-    
+
     def read_incremental(
         self,
         table_name: str,
@@ -1270,13 +1493,13 @@ class IceFrame:
     ) -> pl.DataFrame:
         """
         Read only data added since a specific snapshot or timestamp.
-        
+
         Args:
             table_name: Name of the table
             since_snapshot_id: Read data added after this snapshot ID
             since_timestamp: Read data added after this timestamp (ms since epoch)
             columns: Optional list of columns to select
-            
+
         Returns:
             Polars DataFrame with incremental data
         """
@@ -1284,7 +1507,7 @@ class IceFrame:
         table = self.get_table(table_name)
         reader = IncrementalReader(table)
         return reader.read_incremental(since_snapshot_id, since_timestamp, columns)
-        
+
     def get_changes(
         self,
         table_name: str,
@@ -1294,13 +1517,13 @@ class IceFrame:
     ) -> Dict[str, pl.DataFrame]:
         """
         Get changes (inserts, deletes) between two snapshots.
-        
+
         Args:
             table_name: Name of the table
             from_snapshot_id: Starting snapshot ID
             to_snapshot_id: Ending snapshot ID (defaults to current)
             columns: Optional list of columns to select
-            
+
         Returns:
             Dictionary with 'added', 'deleted', 'modified' DataFrames
         """
@@ -1310,14 +1533,14 @@ class IceFrame:
         return reader.get_changes(from_snapshot_id, to_snapshot_id, columns)
 
     # Table Statistics
-    
+
     def stats(self, table_name: str) -> Dict[str, Any]:
         """
         Get comprehensive table statistics.
-        
+
         Args:
             table_name: Name of the table
-            
+
         Returns:
             Dictionary with table statistics
         """
@@ -1325,15 +1548,15 @@ class IceFrame:
         table = self.get_table(table_name)
         stats_obj = TableStats(table)
         return stats_obj.get_stats()
-        
+
     def validate_data(self, table_name: str, constraints: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Validate data in a table against constraints.
-        
+
         Args:
             table_name: Name of the table
             constraints: List of constraints to check
-            
+
         Returns:
             Dictionary with validation results
         """
@@ -1344,7 +1567,7 @@ class IceFrame:
         return validator.validate(df, constraints)
 
     # Scalability Features
-    
+
     def read_tables_parallel(
         self,
         table_names: List[str],
@@ -1353,19 +1576,18 @@ class IceFrame:
     ) -> Dict[str, pl.DataFrame]:
         """
         Read multiple tables in parallel.
-        
+
         Args:
             table_names: List of table names to read
             max_workers: Number of worker threads
             **read_kwargs: Arguments passed to read_table
-            
+
         Returns:
             Dictionary mapping table names to DataFrames
         """
-        from iceframe.parallel import ParallelExecutor
         executor = ParallelExecutor(max_workers=max_workers)
         return executor.read_tables_parallel(self, table_names, **read_kwargs)
-        
+
     def read_table_chunked(
         self,
         table_name: str,
@@ -1375,28 +1597,27 @@ class IceFrame:
     ):
         """
         Read table in chunks to manage memory usage.
-        
+
         Args:
             table_name: Name of the table
             chunk_size: Number of rows per chunk
             columns: Optional columns to select
             max_memory_mb: Optional memory limit in MB
-            
+
         Yields:
             DataFrame chunks
         """
-        from iceframe.memory import MemoryManager
         manager = MemoryManager(max_memory_mb=max_memory_mb)
         return manager.read_table_chunked(self, table_name, chunk_size, columns)
-        
+
     def profile_column(self, table_name: str, column_name: str) -> Dict[str, Any]:
         """
         Profile a specific column with statistics.
-        
+
         Args:
             table_name: Name of the table
             column_name: Name of the column to profile
-            
+
         Returns:
             Dictionary with column statistics
         """
@@ -1406,26 +1627,26 @@ class IceFrame:
         return stats_obj.profile_column(column_name)
 
     # Advanced Features
-    
+
     def create_view(self, view_name: str, sql: str, replace: bool = False) -> Any:
         """Create a view"""
         from iceframe.views import ViewManager
         manager = ViewManager(self.catalog)
         return manager.create_view(view_name, sql, replace=replace)
-        
+
     def drop_view(self, view_name: str) -> None:
         """Drop a view"""
         from iceframe.views import ViewManager
         manager = ViewManager(self.catalog)
         manager.drop_view(view_name)
-        
+
     def call_procedure(self, table_name: str, procedure_name: str, **kwargs) -> Any:
         """Call a stored procedure on a table"""
         from iceframe.procedures import StoredProcedures
         table = self.get_table(table_name)
         procs = StoredProcedures(table)
         return procs.call(procedure_name, **kwargs)
-        
+
     def evolve_partition(self, table_name: str) -> 'PartitionEvolution':
         """Get partition evolution helper"""
         from iceframe.evolution import PartitionEvolution
@@ -1437,21 +1658,21 @@ class IceFrame:
         from iceframe.catalog_ops import CatalogOperations
         ops = CatalogOperations(self.catalog)
         return ops.register_table(table_name, metadata_location)
-        
+
     def add_files(self, table_name: str, file_paths: List[str]) -> None:
         """Add existing data files to table"""
         from iceframe.ingestion import DataIngestion
         table = self.get_table(table_name)
         ingestion = DataIngestion(table)
         ingestion.add_files(file_paths)
-        
+
     def rollback_to_snapshot(self, table_name: str, snapshot_id: int) -> None:
         """Rollback to snapshot"""
         from iceframe.rollback import RollbackManager
         table = self.get_table(table_name)
         rm = RollbackManager(table)
         rm.rollback_to_snapshot(snapshot_id)
-        
+
     def rollback_to_timestamp(self, table_name: str, timestamp_ms: int) -> None:
         """Rollback to timestamp"""
         from iceframe.rollback import RollbackManager
@@ -1460,11 +1681,11 @@ class IceFrame:
         rm.rollback_to_timestamp(timestamp_ms)
 
     # Branching Support
-    
+
     def create_branch(self, table_name: str, branch_name: str, snapshot_id: Optional[int] = None) -> None:
         """
         Create a new branch.
-        
+
         Args:
             table_name: Name of the table
             branch_name: Name of the branch
@@ -1474,11 +1695,11 @@ class IceFrame:
         table = self.get_table(table_name)
         manager = BranchManager(table)
         manager.create_branch(branch_name, snapshot_id)
-        
+
     def tag_snapshot(self, table_name: str, snapshot_id: int, tag_name: str) -> None:
         """
         Tag a specific snapshot.
-        
+
         Args:
             table_name: Name of the table
             snapshot_id: Snapshot ID to tag

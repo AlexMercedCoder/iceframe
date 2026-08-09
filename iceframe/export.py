@@ -2,13 +2,12 @@
 Data export functionality
 """
 
-from typing import Optional
 import polars as pl
 
 
 class DataExporter:
     """Handle data export operations"""
-    
+
     def to_parquet(
         self,
         df: pl.DataFrame,
@@ -17,14 +16,14 @@ class DataExporter:
     ) -> None:
         """
         Export DataFrame to Parquet file.
-        
+
         Args:
             df: Polars DataFrame to export
             output_path: Path to output file
             compression: Compression codec (snappy, gzip, lz4, zstd)
         """
         df.write_parquet(output_path, compression=compression)
-    
+
     def to_csv(
         self,
         df: pl.DataFrame,
@@ -34,7 +33,7 @@ class DataExporter:
     ) -> None:
         """
         Export DataFrame to CSV file.
-        
+
         Args:
             df: Polars DataFrame to export
             output_path: Path to output file
@@ -46,7 +45,7 @@ class DataExporter:
             separator=separator,
             include_header=include_header,
         )
-    
+
     def to_json(
         self,
         df: pl.DataFrame,
@@ -55,7 +54,7 @@ class DataExporter:
     ) -> None:
         """
         Export DataFrame to JSON file.
-        
+
         Args:
             df: Polars DataFrame to export
             output_path: Path to output file

@@ -2,6 +2,214 @@
 
 All notable changes to IceFrame are documented in this file.
 
+## 0.13.0 — 2026-08-09
+
+A correctness, verifiability and API-completeness release. Three of the fixes
+below are **silent data loss or silently wrong results**; every one of them
+ships with a regression test in `tests/test_regressions_0_13.py`.
+
+The other half of this release is that the test suite now runs **offline, for
+anyone**. Before 0.13.0, 61 of 179 tests skipped on every machine but the
+author's because they required a live Dremio Cloud REST catalog — including
+every test of reading, writing, the query builder, schema evolution and stats.
+
+### ⚠️ Behaviour changes you should know about
+
+- **`remove_orphan_files` is now dry-run by default.** It permanently deletes
+  files, so deletion is opt-in: pass `dry_run=False`. It also returns the list
+  of candidates rather than `None`.
+- **Null values now FAIL data-quality constraints.** `DataValidator` treated a
+  null as "constraint satisfied" (see below). Validators that silently passed
+  before will now correctly fail. Pass `null_policy="pass"` to restore the old
+  behaviour per call or per validator.
+- **`expire_snapshots` returns the list of expired snapshot ids** instead of
+  `None`, and actually expires them.
+- **`list_tables` returns `"namespace.table"`** instead of `str(tuple)` —
+  literally `"('default', 'events')"`, which could not be passed back into any
+  other IceFrame method.
+- **`QueryBuilder.join(how="full")` is now accepted**, and `how="outer"` is
+  mapped to it. On Polars >= 1.0 `"outer"` is deprecated, so the only spelling
+  IceFrame used to accept was the one that emits a `DeprecationWarning`, while
+  the correct modern spelling was rejected outright. `"semi"`, `"anti"` and
+  `"cross"` are also accepted now.
+- **`ORDER BY` is applied before `SELECT`** so you can order by a column you
+  did not select, as SQL allows. Previously that raised `ColumnNotFoundError`.
+- **Dependency floors match the code.** `polars>=1.0.0` (the code uses
+  `pl.sql_expr`, `how="semi"/"anti"`, `vertical_relaxed`, `pl.len()` and
+  `rank(descending=...)`), and `pyiceberg` is capped at `<0.13`.
+- **Exceptions are typed.** Everything IceFrame raises deliberately now derives
+  from `IceFrameError`. Existing `except ValueError:` / `except RuntimeError:` /
+  `except NotImplementedError:` handlers keep working — the new classes subclass
+  the built-ins they replace.
+
+### Fixed — data loss and wrong results (criticals)
+
+- **Filtered compaction destroyed every non-matching row.**
+  `compact_data_files(filter_expr=...)` built a filtered scan and then called
+  `table.overwrite(arrow_table)` with **no `overwrite_filter`**. `overwrite`
+  defaults to `AlwaysTrue`, so the entire table was replaced by the filtered
+  subset. Reproduced: a 6-row table compacted with `"v > 30"` was left with 3
+  rows, and the call reported success. `z_order_optimize` had the identical
+  shape. Both now scope the overwrite to exactly the predicate the scan was
+  scoped to, and a filter that can't be fully pushed to Iceberg is rejected
+  rather than applied approximately.
+- **`AND` silently dropped operands that couldn't be pushed down.** Both filter
+  paths decided pushability by asking "did `to_iceberg()` return `AlwaysTrue`?"
+  — but PyIceberg simplifies `And(AlwaysTrue(), X)` to `X`, so the composite no
+  longer looked unpushable, was routed to pushdown only, and the unpushable
+  operand was never applied anywhere. Reproduced:
+  `(col("id") > col("v")) & (col("g") == "a")` returned 2 rows where the correct
+  answer is 0. Pushability is now tracked explicitly via
+  `Expression.pushdown() -> (expr, fully_pushed)`; a partially-pushed predicate
+  pushes a safe superset and re-applies the full predicate locally.
+- **Null rows escaped every data-quality constraint.** `DataValidator` computed
+  violations as `df.filter(~expr)`. Under Polars' three-valued logic `~expr` is
+  *null* for a null input, so the row was filtered out of the violations frame
+  and the constraint passed. Reproduced:
+  `validate(pl.DataFrame({"age": [5, None]}), ["age > 0"])` returned
+  `{"passed": True}`. This also silently weakened
+  `append_to_table(validators=[...])`, which gates writes. Violations are now
+  `~expr.fill_null(False)`; opt out with `null_policy="pass"`.
+- **The query cache served stale data after writes.** `QueryCache.invalidate`
+  existed and was correct; nothing called it. Every write path (append,
+  overwrite, delete, update, merge, upsert, compaction) now invalidates, and
+  cache keys include the table's current snapshot id as a second line of
+  defence.
+- **`MoRWriter.delete_where` reported success when the delete failed.** It
+  caught every exception and `pass`ed. Failures now propagate.
+
+### Fixed — advertised APIs that did not work
+
+- **`expire_snapshots` called a PyIceberg API that does not exist.** `gc.py`
+  looked for `Table.expire_snapshots`, which is not an attribute of PyIceberg's
+  `Table`; the `hasattr` guard always failed and the method raised
+  `NotImplementedError` whenever it had work to do — it only "succeeded" when
+  there was nothing to expire. Rewritten on the real API,
+  `Table.maintenance.expire_snapshots()` with `.by_id()` / `.commit()`.
+  Snapshots are now sorted by `timestamp_ms` before `retain_last` is applied
+  (`Table.snapshots()` is not guaranteed chronological), `retain_last=0` works,
+  and the leaking `ThreadPoolExecutor` in `_parallel_delete` is gone.
+- **`create_table(sort_order=["col"])` raised `AttributeError`.** The documented
+  list form hit a conversion block whose entire body was a comment and `pass`,
+  then handed the raw list to PyIceberg:
+  `'list' object has no attribute 'is_unsorted'`. A real `SortOrder` is now
+  built, accepting `"col"`, `("col", "desc")` and
+  `("col", "desc", "nulls-last")`. As a consequence compaction's sort-order
+  application is reachable for the first time — it was additionally reading
+  `SortDirection.is_ascending`, which does not exist, inside a bare `except`
+  that swallowed the `AttributeError`.
+- **`BranchManager.tag_snapshot` always raised `NotImplementedError`** with the
+  working call commented out one line above it. Implemented on
+  `ManageSnapshots.create_tag`; `remove_tag` and `list_tags` added.
+- **`CompactionManager.sort()` did not exist** despite being documented in the
+  README's feature table. Implemented, with the same overwrite scoping as
+  `bin_pack`.
+- **`DataSkipper.can_skip_file` could never skip anything.** It compared
+  `filter_expr.op` against `">"`, `"<"` and `"=="`, but `BinaryExpression`
+  stores `"gt"`, `"lt"` and `"eq"`. No branch could match. Fixed and extended
+  to `>=` / `<=`.
+- **`read_incremental` returned the whole table.** It computed the starting
+  snapshot and then ignored it, scanning everything. It now performs a real
+  manifest-level incremental scan, reading only the data files added after the
+  given snapshot.
+- **`target_file_size_mb` was accepted and never used** — the primary knob of a
+  bin-packing compactor was decorative. It now sets Iceberg's
+  `write.target-file-size-bytes` for the rewrite.
+- **Aggregate and window functions returned `None` from `to_iceberg()`.** Had
+  one ever reached a filter list, `And(None, ...)` would have crashed. They now
+  correctly report themselves as unpushable.
+
+### Added
+
+- **Local SQLite catalog test fixture.** The core suite runs offline against a
+  PyIceberg `sql` catalog with a `file://` warehouse — no credentials, no
+  network. Live-catalog tests are opt-in via `pytest --live` and marked
+  `@pytest.mark.live`.
+- **CI** (`.github/workflows/ci.yml`): ruff, pytest with coverage across
+  Python 3.9–3.13, mypy, and `python -m build` + `twine check` on every push
+  and PR. No publish step; releases are cut manually.
+- **`ice.upsert(table, data, join_cols=[...])`** on PyIceberg's native atomic
+  `Table.upsert`. `QueryBuilder.merge` routes to it automatically when the merge
+  is a plain "update matched, insert unmatched", instead of reading and
+  overwriting the entire target table.
+- **`with ice.transaction(table) as txn:`** for multi-operation atomic commits —
+  previously there was no way to make a schema change and an append atomic.
+- **`ice.inspect(table)`** exposing Iceberg metadata tables (`snapshots`,
+  `files`, `data_files`, `delete_files`, `partitions`, `manifests`, `history`,
+  `refs`, `entries`, `metadata_log_entries`) as Polars DataFrames, via
+  `Table.inspect`. `ice.stats()` is rebuilt on top of it.
+- **Projection and limit pushdown in `QueryBuilder`.** `.select("id").limit(10)`
+  now passes `selected_fields` and `limit` into the Iceberg scan instead of
+  reading the whole table and trimming afterwards. Pushdown is skipped whenever
+  it would change the answer (ordering, joins, aggregation, or a predicate that
+  can't be fully pushed).
+- **Partitioned `QueryBuilder.update` uses
+  `Transaction.dynamic_partition_overwrite`** — one atomic commit instead of a
+  per-partition commit storm — falling back to per-partition overwrites when the
+  native path can't express the spec.
+- **DataFrame ergonomics on `IceFrame`**: `to_arrow()`, `to_pandas()`,
+  `lazy()`, `head()`, `describe()`, `count_rows()` (metadata-based) and a public
+  `scan_batches()`.
+- **Explicit filter dialects.** `filter=` takes an IceFrame `Expression` and is
+  pushed to Iceberg; `filter_sql=` takes a Polars SQL string evaluated locally.
+  The ambiguous `filter_expr=` (same name, two languages, opposite pushdown) is
+  kept for compatibility but deprecated.
+- **Exception hierarchy**: `IceFrameError` with `CatalogError`,
+  `TableNotFoundError`, `SchemaError`, `ValidationError`, `CompactionError`,
+  `MaintenanceError` and `UnsupportedOperationError`.
+- **Extended schema type coverage.** `decimal(p, s)`, `binary`, `uuid`, `time`,
+  `timestamptz`, `list<T>`, `map<K, V>` and nested structs, plus common aliases
+  (`int32`, `int64`, `float64`, `bool`, `str`). The dict schema form now
+  supports `{"type": ..., "required": True}` and inline nested structs. Nested
+  field ids are allocated from a single counter so they can't collide.
+- **Real window functions.** `RowNumber` honours `ORDER BY` (its ordering branch
+  was a literal `pass`, so row numbers were arbitrary); `Rank` and `DenseRank`
+  use every order column rather than only the first; `Lead` and `Lag` added.
+- **Structured logging** throughout the library — module-level
+  `logging.getLogger(__name__)` replacing 25 `print()` calls. `rich` output
+  stays confined to the CLIs.
+- **`py.typed`**, so IceFrame's annotations are visible to downstream type
+  checkers.
+- **Safer MCP surface**: read-only by default (`ICEFRAME_MCP_READ_ONLY`), row
+  and byte caps on `execute_query` (`ICEFRAME_MCP_MAX_ROWS` /
+  `ICEFRAME_MCP_MAX_BYTES`), a structured `get_schema` tool for query planning,
+  and a single reused catalog connection instead of a fresh auth handshake on
+  every tool call.
+- **`AsyncIceFrame` owns a bounded thread pool** instead of hijacking the
+  interpreter-wide default executor, accepts an existing `IceFrame`, works as an
+  async context manager, and exposes aliases without the `_async` suffix.
+- New docs: [`docs/views.md`](docs/views.md) (previously linked from the README
+  with the literal note "(if exists, or remove)" — it did not exist),
+  [`docs/catalogs.md`](docs/catalogs.md),
+  [`docs/transactions.md`](docs/transactions.md),
+  [`docs/metadata_tables.md`](docs/metadata_tables.md).
+
+### Improved — safety and observability
+
+- **Orphan-file collection.** Puffin/statistics and partition-stats files are
+  included in the valid set (they were classified as orphans and deleted on
+  local filesystems); file age is resolved through the FileIO's filesystem on
+  object stores instead of `os.stat`, which only ever worked for `file://` and
+  made the operation a silent no-op on S3/GCS/ADLS; `max_workers` is honoured;
+  files whose age can't be determined are still never deleted.
+- **No bare `except:` clauses remain in the library** — all ten swallowed
+  `KeyboardInterrupt` and `SystemExit` along with everything else. Namespace
+  creation in `create_table` now distinguishes "already exists" from auth and
+  network failures instead of hiding them behind a later, more confusing error.
+- **Ruff clean.** The 95-finding backlog (including 8 undefined names and a
+  missing `import polars as pl` in `schema.py`) is cleared, with an explicit
+  `[tool.ruff.lint]` `select` wired into CI.
+- Parallel compaction failures now propagate as `CompactionError` instead of
+  being logged and swallowed.
+
+### Test coverage
+
+- **242 → 287 passing tests; 61 skips → 6.** Line coverage **45% → 68%**.
+- New: `tests/test_regressions_0_13.py` (one test per fix above) and
+  `tests/test_coverage_gaps.py` (the modules that shipped at 0% coverage:
+  `maintenance`, `skipping`, `federation`, `incremental`, `async_ops`, `mor`,
+  plus the MCP surface).
+
 ## 0.12.0 — 2026-06-12
 
 This is a bugfix / correctness release driven by an end-to-end code review

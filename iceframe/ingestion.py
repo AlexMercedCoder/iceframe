@@ -2,21 +2,23 @@
 Data ingestion and bulk import.
 """
 
-from typing import List, Optional
+from typing import List
+
 from pyiceberg.table import Table
+
 
 class DataIngestion:
     """
     Manage data ingestion.
     """
-    
+
     def __init__(self, table: Table):
         self.table = table
-        
+
     def add_files(self, file_paths: List[str]) -> None:
         """
         Add existing data files to the table without rewriting.
-        
+
         Args:
             file_paths: List of absolute paths to data files (Parquet/Avro/ORC)
         """
@@ -29,4 +31,4 @@ class DataIngestion:
             else:
                 raise NotImplementedError("Adding files requires PyIceberg 0.6.0+")
         except AttributeError:
-            raise NotImplementedError("Operation not supported by this PyIceberg version")
+            raise NotImplementedError("Operation not supported by this PyIceberg version") from None

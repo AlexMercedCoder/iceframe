@@ -2,17 +2,20 @@
 Unit tests for AI Agent
 """
 
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
+
 from iceframe.agent.core import IceFrameAgent
 from iceframe.agent.llm_base import LLMConfig
+
 
 @pytest.fixture
 def mock_ice_frame():
     """Mock IceFrame instance"""
     mock = Mock()
     mock.list_tables.return_value = ["users", "orders"]
-    
+
     # Create mock table with proper spec
     mock_table = Mock()
     mock_table.schema.return_value = Mock(
@@ -22,7 +25,7 @@ def mock_ice_frame():
         ]
     )
     mock_table.spec.return_value = "PartitionSpec()"
-    
+
     mock.get_table.return_value = mock_table
     mock.stats.return_value = {
         "table_name": "users",
@@ -49,19 +52,19 @@ def test_agent_chat(mock_ice_frame, mock_llm):
     """Test basic chat"""
     agent = IceFrameAgent(mock_ice_frame, llm=mock_llm)
     response = agent.chat("Hello")
-    
+
     assert response == "This is a test response"
     assert len(agent.conversation_history) == 2  # user + assistant
 
 def test_agent_tool_execution(mock_ice_frame, mock_llm):
     """Test tool execution"""
     agent = IceFrameAgent(mock_ice_frame, llm=mock_llm)
-    
+
     # Test list_tables
     result = agent._execute_tool("list_tables", {"namespace": "default"})
     assert "tables" in result
     assert result["tables"] == ["users", "orders"]
-    
+
     # Test describe_table
     result = agent._execute_tool("describe_table", {"table_name": "users"})
     assert "columns" in result
@@ -72,6 +75,6 @@ def test_agent_reset_conversation(mock_ice_frame, mock_llm):
     agent = IceFrameAgent(mock_ice_frame, llm=mock_llm)
     agent.chat("Hello")
     assert len(agent.conversation_history) > 0
-    
+
     agent.reset_conversation()
     assert len(agent.conversation_history) == 0

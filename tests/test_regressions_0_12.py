@@ -8,18 +8,13 @@ SQLite-backed catalog under ``tmp_path`` so it runs offline.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 import warnings
 
 import polars as pl
-import pyarrow as pa
 import pytest
 
-from iceframe import IceFrame, col, lit, QueryBuilder, __version__
-from iceframe.cache import QueryCache, DiskCache
-from iceframe.expressions import NotExpression, BinaryExpression, Column
-
+from iceframe import IceFrame, __version__, col, lit
+from iceframe.cache import QueryCache
 
 # ---------- shared local-catalog fixtures ----------
 
@@ -102,7 +97,6 @@ def test_not_of_non_pushable_predicate_keeps_all_rows():
 
 def test_not_of_pushable_predicate_still_pushes_down():
     """Sanity: NOT(col == 1) should push as Not(EqualTo(...))."""
-    from pyiceberg.expressions import Not, AlwaysTrue
     not_expr = ~(col("x") == 1)
     pushed = not_expr.to_iceberg()
     # Either a real Not(...) or AlwaysTrue (depending on PyIceberg's
@@ -362,11 +356,17 @@ def test_querybuilder_cache_returns_cached_result(local_ice, sample_df):
     qb = local_ice.query(table).cache(ttl=60)
     first = qb.execute()
 
-    # Mutate the table after the first execute. If the cache is actually used,
-    # the second execute should still see the cached result.
-    local_ice.append_to_table(table, sample_df)
+    # Re-executing without any write in between must hit the cache.
     second = qb.execute()
-    assert first.height == second.height, "cache(ttl) did not serve cached result"
+    assert second is first, "cache(ttl) did not serve the cached result"
+
+    # 0.13.0: a write MUST invalidate the cache. Previously the cached frame
+    # kept being served for the life of the process, so this returned 5.
+    local_ice.append_to_table(table, sample_df)
+    third = qb.execute()
+    assert third.height == 10, (
+        f"stale cache after write: expected 10 rows, got {third.height}"
+    )
 
 
 # ---------- 2.4: REST config without token warns instead of erroring ----------
@@ -401,4 +401,8 @@ def test_unknown_string_type_warns():
     from iceframe.operations import TableOperations
     ops = TableOperations(catalog=None)  # only need the helper
     with pytest.warns(UserWarning, match="Unknown type string"):
-        ops._string_to_iceberg_type("int32")
+        ops._string_to_iceberg_type("flooat")
+
+    # 0.13.0: "int32" is now a recognised alias rather than a silent typo.
+    from pyiceberg.types import IntegerType
+    assert isinstance(ops._string_to_iceberg_type("int32"), IntegerType)

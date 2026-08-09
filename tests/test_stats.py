@@ -2,15 +2,16 @@
 Unit tests for Table Statistics
 """
 
-import pytest
-import polars as pl
 import datetime
+
+import polars as pl
+
 
 def test_get_stats(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test getting table statistics"""
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
-    
+
     # Add some data
     data = pl.DataFrame({
         "id": [1, 2, 3],
@@ -22,10 +23,10 @@ def test_get_stats(ice_frame, test_table_name, sample_schema, cleanup_table):
         pl.col("created_at").cast(pl.Datetime("us"))
     ])
     ice_frame.append_to_table(test_table_name, data)
-    
+
     # Get stats
     stats = ice_frame.stats(test_table_name)
-    
+
     assert "table_name" in stats
     assert "schema" in stats
     assert stats["schema"]["fields"] == 4
@@ -36,7 +37,7 @@ def test_profile_column_numeric(ice_frame, test_table_name, sample_schema, clean
     """Test profiling a numeric column"""
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
-    
+
     # Add data
     data = pl.DataFrame({
         "id": [1, 2, 3, 4, 5],
@@ -48,10 +49,10 @@ def test_profile_column_numeric(ice_frame, test_table_name, sample_schema, clean
         pl.col("created_at").cast(pl.Datetime("us"))
     ])
     ice_frame.append_to_table(test_table_name, data)
-    
+
     # Profile age column
     profile = ice_frame.profile_column(test_table_name, "age")
-    
+
     assert profile["column_name"] == "age"
     assert profile["null_count"] == 0
     assert profile["total_count"] == 5
@@ -64,7 +65,7 @@ def test_profile_column_string(ice_frame, test_table_name, sample_schema, cleanu
     """Test profiling a string column"""
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
-    
+
     # Add data
     data = pl.DataFrame({
         "id": [1, 2, 3],
@@ -76,10 +77,10 @@ def test_profile_column_string(ice_frame, test_table_name, sample_schema, cleanu
         pl.col("created_at").cast(pl.Datetime("us"))
     ])
     ice_frame.append_to_table(test_table_name, data)
-    
+
     # Profile name column
     profile = ice_frame.profile_column(test_table_name, "name")
-    
+
     assert profile["column_name"] == "name"
     assert "string_stats" in profile
     assert profile["string_stats"]["min_length"] == 1

@@ -1,6 +1,7 @@
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
+
 import polars as pl
 
 # Mock external libraries
@@ -11,14 +12,24 @@ sys.modules["fastexcel"] = MagicMock()
 sys.modules["gspread"] = MagicMock()
 sys.modules["daft"] = MagicMock()
 
-from iceframe.ingest import (
-    read_delta, read_lance, read_vortex, read_excel, read_gsheets, read_hudi,
-    read_csv, read_json, read_parquet, read_ipc, read_avro
-)
 from iceframe.core import IceFrame
+from iceframe.ingest import (
+    read_avro,
+    read_csv,
+    read_delta,
+    read_excel,
+    read_gsheets,
+    read_hudi,
+    read_ipc,
+    read_json,
+    read_lance,
+    read_parquet,
+    read_vortex,
+)
+
 
 class TestIngest(unittest.TestCase):
-    
+
     @patch("polars.read_delta")
     def test_read_delta(self, mock_read):
         mock_read.return_value = pl.DataFrame({"a": [1]})
@@ -31,7 +42,7 @@ class TestIngest(unittest.TestCase):
             mock_ds.return_value.to_table.return_value = MagicMock() # Arrow table
             with patch("polars.from_arrow") as mock_from_arrow:
                 mock_from_arrow.return_value = pl.DataFrame({"a": [1]})
-                
+
                 df = read_lance("path/to/lance")
                 mock_ds.assert_called_with("path/to/lance")
                 self.assertIsInstance(df, pl.DataFrame)
@@ -41,10 +52,10 @@ class TestIngest(unittest.TestCase):
             mock_scan = mock_open.return_value.scan.return_value
             mock_read_all = mock_scan.read_all.return_value
             mock_read_all.to_arrow.return_value = MagicMock()
-            
+
             with patch("polars.from_arrow") as mock_from_arrow:
                 mock_from_arrow.return_value = pl.DataFrame({"a": [1]})
-                
+
                 df = read_vortex("path/to/vortex")
                 mock_open.assert_called_with("path/to/vortex")
                 self.assertIsInstance(df, pl.DataFrame)
@@ -62,7 +73,7 @@ class TestIngest(unittest.TestCase):
             mock_sh = mock_gc.open_by_url.return_value
             mock_ws = mock_sh.sheet1
             mock_ws.get_all_records.return_value = [{"a": 1}]
-            
+
             df = read_gsheets("http://sheets", credentials="creds.json")
             mock_sa.assert_called_with(filename="creds.json")
             mock_gc.open_by_url.assert_called_with("http://sheets")
@@ -73,7 +84,7 @@ class TestIngest(unittest.TestCase):
             mock_read.return_value.to_arrow.return_value = MagicMock()
             with patch("polars.from_arrow") as mock_from_arrow:
                 mock_from_arrow.return_value = pl.DataFrame({"a": [1]})
-                
+
                 df = read_hudi("path/to/hudi")
                 mock_read.assert_called_with("path/to/hudi")
                 self.assertIsInstance(df, pl.DataFrame)
@@ -114,7 +125,7 @@ class TestIngest(unittest.TestCase):
         self.assertIsInstance(df, pl.DataFrame)
 
 class TestIceFrameIngest(unittest.TestCase):
-    
+
     def setUp(self):
         self.config = {"uri": "http://mock", "type": "rest", "token": "dummy"}
         # 0.12 replaced CatalogPool with a direct load_catalog call.
@@ -123,15 +134,15 @@ class TestIceFrameIngest(unittest.TestCase):
             self.ice = IceFrame(self.config)
             self.ice.create_table = MagicMock()
             self.ice.append_to_table = MagicMock()
-            
+
     @patch("iceframe.ingest.read_delta")
     def test_create_from_delta(self, mock_read):
         df = pl.DataFrame({"a": [1]})
         mock_read.return_value = df
         self.ice.create_table.return_value = MagicMock()
-        
+
         self.ice.create_table_from_delta("table", "path")
-        
+
         mock_read.assert_called_with("path", version=None)
         self.ice.create_table.assert_called_with("table", schema=df)
         self.ice.append_to_table.assert_called_with("table", df)

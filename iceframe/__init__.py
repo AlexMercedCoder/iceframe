@@ -5,15 +5,23 @@ IceFrame provides a simple, intuitive API for working with Apache Iceberg tables
 using REST or SQL catalogs with local execution.
 """
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
-
-try:
-    __version__ = _pkg_version("iceframe")
-except PackageNotFoundError:  # editable / source checkout without metadata installed
-    __version__ = "0.0.0+unknown"
+#: Single source of truth for the package version. ``pyproject.toml`` reads it
+#: from here via ``[tool.setuptools.dynamic]``, so the two can never drift.
+__version__ = "0.13.0"
 
 from iceframe.core import IceFrame
-from iceframe.expressions import col, lit, Expression
+from iceframe.exceptions import (
+    CatalogError,
+    CompactionError,
+    IceFrameError,
+    MaintenanceError,
+    SchemaError,
+    TableNotFoundError,
+    UnsupportedOperationError,
+    ValidationError,
+)
+from iceframe.expressions import Expression, col, lit
+from iceframe.metadata import MetadataInspector
 from iceframe.query import QueryBuilder
 from iceframe.utils import load_catalog_config_from_env
 
@@ -21,8 +29,18 @@ __all__ = [
     "IceFrame",
     "QueryBuilder",
     "Expression",
+    "MetadataInspector",
     "col",
     "lit",
     "load_catalog_config_from_env",
+    # Exception hierarchy
+    "IceFrameError",
+    "CatalogError",
+    "TableNotFoundError",
+    "SchemaError",
+    "ValidationError",
+    "CompactionError",
+    "MaintenanceError",
+    "UnsupportedOperationError",
     "__version__",
 ]
