@@ -4,13 +4,25 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 
-# Mock external libraries
-sys.modules["deltalake"] = MagicMock()
-sys.modules["lance"] = MagicMock()
-sys.modules["vortex"] = MagicMock()
-sys.modules["fastexcel"] = MagicMock()
-sys.modules["gspread"] = MagicMock()
-sys.modules["daft"] = MagicMock()
+# Fake the optional libraries for this module only. These used to be assigned
+# into sys.modules at import time and never removed, so every later test in
+# the session saw MagicMocks instead of the real packages.
+_FAKE_MODULES = patch.dict(
+    sys.modules,
+    {
+        name: MagicMock()
+        for name in ("deltalake", "lance", "vortex", "fastexcel", "gspread", "daft")
+    },
+)
+
+
+def setup_module(module):
+    _FAKE_MODULES.start()
+
+
+def teardown_module(module):
+    _FAKE_MODULES.stop()
+
 
 from iceframe.core import IceFrame
 from iceframe.ingest import (

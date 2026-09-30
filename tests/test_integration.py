@@ -6,10 +6,10 @@ from pydantic import BaseModel
 
 # Mock IPython
 ipython_mock = MagicMock()
-sys.modules["IPython"] = ipython_mock
-sys.modules["IPython.core"] = ipython_mock
-sys.modules["IPython.core.magic"] = ipython_mock
-sys.modules["IPython.core.display"] = ipython_mock
+_IPYTHON_NAMES = ("IPython", "IPython.core", "IPython.core.magic", "IPython.core.display")
+_saved_modules = {name: sys.modules.get(name) for name in _IPYTHON_NAMES + ("iceframe.magics",)}
+sys.modules.update(dict.fromkeys(_IPYTHON_NAMES, ipython_mock))
+sys.modules.pop("iceframe.magics", None)
 
 
 # Fix decorators to be pass-through
@@ -32,6 +32,14 @@ ipython_mock.Magics = DummyMagics
 
 from iceframe import IceFrame
 from iceframe.magics import IceFrameMagics
+
+# Restore the real modules so later tests (and a real IPython) are unaffected;
+# IceFrameMagics keeps the references it was built with.
+for _name, _module in _saved_modules.items():
+    if _module is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _module
 
 # Mock catalog config for testing without a real catalog
 # Note: In a real scenario, we'd need a running catalog or mock the catalog interaction
