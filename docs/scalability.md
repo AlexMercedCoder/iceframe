@@ -107,11 +107,33 @@ writer = StreamingWriter(ice, "events", batch_size=1000)
 writer.write({"id": 1, "event": "click"})
 writer.flush()
 
-# Kafka integration
-stream_from_kafka(ice, "kafka-topic", "events_table", kafka_config)
+# Kafka integration (JSON messages)
+written = stream_from_kafka(
+    ice,
+    "kafka-topic",
+    "events_table",
+    {"bootstrap_servers": "localhost:9092", "group_id": "iceframe-events",
+     "auto_offset_reset": "earliest"},
+    batch_size=1000,
+    flush_interval_seconds=60,   # buffered rows wait at most this long, even if the topic goes quiet
+    idle_timeout_seconds=None,   # stop after this long with no messages (None: run until interrupted)
+    max_records=None,            # stop after this many records
+)
 ```
 
-**Install**: `pip install "iceframe[streaming]"` (for kafka-python)
+`stream_from_kafka` is **at-least-once**. Offsets are committed only after
+the records they cover have been appended, and auto-commit is always turned
+off, so a crash or a failed append can replay records but never loses them.
+Give the consumer a `group_id`, since offsets can only be committed for a
+group. If a replay would create duplicates you care about, land the stream in
+a staging table and `upsert` into the target on a key.
+
+Before 0.15.0 the consumer auto-committed offsets as messages were read,
+so records buffered but not yet written were lost if the process died; the
+flush interval was only checked when a new message arrived; and a failed
+append was retried during shutdown.
+
+**Install**: `pip install "iceframe[streaming]"` (kafka-python 2.1 or later)
 
 ## Data Skipping
 
