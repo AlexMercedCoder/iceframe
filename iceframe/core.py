@@ -677,19 +677,22 @@ class IceFrame:
 
         Args:
             sql: SQL query to execute
-            tables: List of table names to register before querying.
-                   If None, attempts to parse table names from SQL (basic) or requires manual registration.
+            tables: Iceberg tables to register before querying. If None, every
+                name after a FROM or JOIN that exists in the catalog is registered.
+                Pass ``tables`` explicitly when that detection is not enough.
 
         Returns:
             Polars DataFrame result
         """
-        from iceframe.datafusion_ops import DataFusionManager
+        from iceframe.datafusion_ops import DataFusionManager, referenced_tables
 
         dfm = DataFusionManager(self)
 
-        if tables:
-            for table in tables:
-                dfm.register_table(table)
+        if tables is None:
+            tables = [name for name in referenced_tables(sql) if self.table_exists(name)]
+
+        for table in tables:
+            dfm.register_table(table)
 
         return dfm.query(sql)
 
@@ -856,6 +859,7 @@ class IceFrame:
         self,
         table_name: str,
         data: pl.DataFrame | pa.Table | dict[str, list],
+        overwrite_filter: Union[str, "Expression"] | None = None,
     ) -> None:
         """
         Overwrite table data.
@@ -863,12 +867,16 @@ class IceFrame:
         Args:
             table_name: Name of the table
             data: Data to write (Polars DataFrame, PyArrow Table, or dict)
+            overwrite_filter: Replace only the rows matching this Iceberg
+                predicate (a string such as ``"region = 'EU'"`` or an IceFrame
+                expression). When omitted the whole table is replaced.
 
         Example:
             >>> df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
             >>> ice.overwrite_table("my_table", df)
+            >>> ice.overwrite_table("my_table", eu_rows, overwrite_filter="region = 'EU'")
         """
-        self._operations.overwrite_table(table_name, data)
+        self._operations.overwrite_table(table_name, data, overwrite_filter=overwrite_filter)
 
     def delete_from_table(
         self,

@@ -90,6 +90,87 @@ class _FieldIdCounter:
         return value
 
 
+def _conform_to_table(data: pa.Table, table: Table) -> pa.Table:
+    """
+    Reconcile two harmless mismatches between inferred input and the table schema.
+
+    * All-null columns: Polars and PyArrow infer the ``null`` type when every
+      value is ``None`` (one row with an optional field unset is enough), and
+      Iceberg rejects ``null`` below format version 3 even though the table
+      already declares the column's real type. They are cast to that type.
+    * Nullability: Polars marks every column nullable, and PyIceberg refuses a
+      nullable column for a ``required`` field even when it holds no nulls.
+      Such columns are marked non-nullable. A column that does contain nulls is
+      left alone so PyIceberg still rejects it.
+    """
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    target = schema_to_pyarrow(table.schema())
+    fields = list(data.schema)
+    columns = list(data.columns)
+    changed = False
+    for position, field in enumerate(fields):
+        index = target.get_field_index(field.name)
+        if index == -1:
+            continue
+        wanted = target.field(index)
+        if pa.types.is_null(field.type):
+            fields[position] = pa.field(field.name, wanted.type, nullable=True)
+            columns[position] = pa.nulls(data.num_rows, type=wanted.type)
+            changed = True
+        elif field.type != wanted.type or (field.nullable and not wanted.nullable):
+            column = columns[position]
+            if wanted.nullable or column.null_count == 0:
+                if field.type == wanted.type or _fits_nullability(
+                    column.combine_chunks(), field.type, wanted.type
+                ):
+                    columns[position] = column.cast(wanted.type)
+                    fields[position] = pa.field(
+                        field.name, wanted.type, nullable=field.nullable and wanted.nullable
+                    )
+                    changed = True
+    if not changed:
+        return data
+    return pa.Table.from_arrays(columns, schema=pa.schema(fields, metadata=data.schema.metadata))
+
+
+def _fits_nullability(array: pa.Array, have: pa.DataType, want: pa.DataType) -> bool:
+    """
+    True when ``have`` differs from ``want`` only in nested nullability and
+    ``array`` has no nulls where ``want`` forbids them.
+
+    PyArrow will happily cast a list holding nulls to a non-null element type,
+    so the null check has to happen here, level by level.
+    """
+    if have == want:
+        return True
+    if pa.types.is_struct(have) and pa.types.is_struct(want):
+        if [f.name for f in have] != [f.name for f in want]:
+            return False
+        for i, target in enumerate(want):
+            child = array.field(i)
+            if not target.nullable and child.null_count:
+                return False
+            if not _fits_nullability(child, have.field(i).type, target.type):
+                return False
+        return True
+    if (pa.types.is_list(have) and pa.types.is_list(want)) or (
+        pa.types.is_large_list(have) and pa.types.is_large_list(want)
+    ):
+        values = array.flatten()
+        if not want.value_field.nullable and values.null_count:
+            return False
+        return _fits_nullability(values, have.value_type, want.value_type)
+    if pa.types.is_map(have) and pa.types.is_map(want):
+        items = array.items
+        if not want.item_field.nullable and items.null_count:
+            return False
+        return _fits_nullability(array.keys, have.key_type, want.key_type) and _fits_nullability(
+            items, have.item_type, want.item_type
+        )
+    return False
+
+
 class TableOperations:
     """Handle table CRUD operations"""
 
@@ -841,33 +922,13 @@ class TableOperations:
             branch: Optional branch name to write to
         """
         table = self.get_table(table_name)
-        arrow_data = to_arrow_table(data)
+        arrow_data = _conform_to_table(to_arrow_table(data), table)
 
-        # Note: PyIceberg's append API might not directly support 'branch' arg in all versions
-        # If supported, we pass it. If not, we might need to set WAP properties.
-        try:
-            # Try passing branch if supported by PyIceberg version
-            if branch:
-                # Check if append supports branch argument (newer PyIceberg)
-                import inspect
-
-                sig = inspect.signature(table.append)
-                if "branch" in sig.parameters:
-                    table.append(arrow_data, branch=branch)
-                    invalidate_query_cache(table_name)
-                    return
-
-                # Fallback: Use WAP properties if branch arg not supported
-                # This sets write.wap.enabled=true and write.wap.id=<branch>
-                with table.transaction() as txn:
-                    txn.set_properties({"write.wap.enabled": "true", "write.wap.id": branch})
-                    txn.append(arrow_data)
-                invalidate_query_cache(table_name)
-                return
-
-            table.append(arrow_data)
-        except TypeError:
-            # Fallback for older versions
+        # PyIceberg >= 0.11 writes to a branch natively. There is deliberately no
+        # fallback: an earlier one retried a failed branch append on main.
+        if branch:
+            table.append(arrow_data, branch=branch)
+        else:
             table.append(arrow_data)
 
         invalidate_query_cache(table_name)
@@ -888,7 +949,7 @@ class TableOperations:
                 table is replaced.
         """
         table = self.get_table(table_name)
-        arrow_data = to_arrow_table(data)
+        arrow_data = _conform_to_table(to_arrow_table(data), table)
 
         if overwrite_filter is None:
             table.overwrite(arrow_data)
@@ -935,7 +996,7 @@ class TableOperations:
             ``{"rows_updated": int, "rows_inserted": int}``
         """
         table = self.get_table(table_name)
-        arrow_data = to_arrow_table(data)
+        arrow_data = _conform_to_table(to_arrow_table(data), table)
 
         kwargs: dict[str, Any] = {
             "when_matched_update_all": when_matched_update_all,
