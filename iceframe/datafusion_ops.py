@@ -2,22 +2,48 @@
 DataFusion integration for IceFrame.
 """
 
+import re
+from typing import Any
+
 import polars as pl
 import pyarrow as pa
+import pyarrow.dataset as ds
 
-from iceframe.utils import from_arrow_dataframe
+from iceframe.utils import from_arrow_dataframe, normalize_table_identifier
 
 try:
     import datafusion
+    import datafusion.catalog
 
     DATAFUSION_AVAILABLE = True
 except ImportError:
     DATAFUSION_AVAILABLE = False
 
 
+_TABLE_REFERENCE = re.compile(
+    r"\b(?:from|join)\s+((?:\"[^\"]+\"|[A-Za-z_][\w]*)(?:\.(?:\"[^\"]+\"|[A-Za-z_][\w]*))*)",
+    re.IGNORECASE,
+)
+
+
+def referenced_tables(sql: str) -> list[str]:
+    """Names that follow FROM or JOIN in ``sql``, unquoted, in first-seen order."""
+    names: list[str] = []
+    for match in _TABLE_REFERENCE.finditer(sql):
+        name = match.group(1).replace('"', "")
+        if name not in names:
+            names.append(name)
+    return names
+
+
 class DataFusionManager:
     """
     Manage DataFusion context and execution.
+
+    Iceberg tables are registered under a DataFusion schema named after their
+    namespace, so ``SELECT * FROM analytics.events`` resolves the same way it
+    does in IceFrame. Each table is also reachable by its bare name (``events``)
+    unless another registered table already claimed that name.
     """
 
     def __init__(self, ice_frame):
@@ -34,26 +60,37 @@ class DataFusionManager:
 
         self.ice_frame = ice_frame
         self.ctx = datafusion.SessionContext()
+        self._schemas: dict[str, Any] = {}
 
-    def register_table(self, table_name: str, alias: str | None = None):
+    def register_table(self, table_name: str, alias: str | None = None) -> None:
         """
         Register an Iceberg table with DataFusion.
 
+        The table is scanned into memory once and exposed to DataFusion as an
+        Arrow dataset; DataFusion does not read the Iceberg files itself.
+
         Args:
-            table_name: Name of the Iceberg table
-            alias: Optional alias for the table in SQL
+            table_name: Name of the Iceberg table ("namespace.table")
+            alias: Register under this single name instead of the
+                namespace-qualified and bare names
         """
-        # For now, we'll scan the table to Arrow and register it.
-        # Ideally, we'd use a native Iceberg provider for DataFusion if available,
-        # but registering the Arrow dataset is a good start.
-        # Using scan_batches to get a RecordBatchReader is efficient.
-
         batch_reader = self.ice_frame._operations.scan_batches(table_name)
-        # DataFusion can register a RecordBatchReader or PyArrow Table
-        # Converting to Table first is safer for now as batch reader support varies
-        table = pa.Table.from_batches(batch_reader)
+        dataset = ds.dataset(pa.Table.from_batches(batch_reader))
 
-        self.ctx.register_table(alias or table_name, table)
+        if alias:
+            self.ctx.register_table(alias, dataset)
+            return
+
+        namespace, table = normalize_table_identifier(table_name)
+        schema = self._schemas.get(namespace)
+        if schema is None:
+            schema = datafusion.catalog.Schema.memory_schema()
+            self.ctx.catalog().register_schema(namespace, schema)
+            self._schemas[namespace] = schema
+        schema.register_table(table, dataset)
+
+        if not self.ctx.table_exist(table):
+            self.ctx.register_table(table, dataset)
 
     def query(self, sql: str) -> pl.DataFrame:
         """
