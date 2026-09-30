@@ -27,6 +27,14 @@ Every bug fix should include a regression test. Features that depend on an
 optional package need a real contract test against a supported version rather
 than a mock that invents the dependency's API.
 
+Put those contract tests in `tests/test_integrations_real.py`, guarded with
+`pytest.importorskip`. Catalog-dependent behavior belongs in
+`tests/compat_checks.py`, which runs against every catalog in CI and feeds
+`docs/compatibility.md` (regenerate it with `python scripts/compat_matrix.py`).
+Never assign fakes into `sys.modules` at module level: they leak into every
+later test in the session. Use `patch.dict(sys.modules, ...)` scoped to the
+test or module.
+
 ## Compatibility
 
 Public API removals require a deprecation period and a changelog entry. Core

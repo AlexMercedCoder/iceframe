@@ -4,10 +4,13 @@ A DataFrame-like library for working with Apache Iceberg tables using REST catal
 
 IceFrame provides a simple, intuitive API for creating, reading, updating, and deleting Iceberg tables, as well as performing maintenance operations and exporting data.
 
-> **IceFrame 0.14.0** requires Python 3.10+, upgrades the optional MCP server to
-> the official Python SDK 2.1 protocol stack, and completes full-package static
-> type checking. It also includes the correctness, UX, packaging, and
-> performance hardening listed in [`CHANGELOG.md`](CHANGELOG.md).
+> **IceFrame 0.15.0** tests every optional integration against the real
+> library and every feature against Apache Polaris and the Iceberg REST
+> reference catalog. That testing found and fixed a DataFusion integration
+> that failed on every query, a Kafka stream that could lose records, a
+> branch write that could land on `main`, and appends that failed on all-null
+> or required columns. See [`CHANGELOG.md`](CHANGELOG.md) and the
+> [compatibility matrix](docs/compatibility.md).
 
 ## Features
 
@@ -64,6 +67,7 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - [Views](docs/views.md)
 - [Catalog Operations](docs/catalog_ops.md)
 - [Catalog Support Matrix](docs/catalogs.md)
+- [Compatibility Matrix (tested)](docs/compatibility.md)
 - [Transactions & Upserts](docs/transactions.md)
 - [Metadata Tables](docs/metadata_tables.md)
 
@@ -84,6 +88,8 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 - [AI Agent](docs/ai_agent.md)
 - [MCP Server](docs/mcp.md)
 - [Pydantic Integration](docs/pydantic.md)
+- [Merge-on-Read Status](docs/merge_on_read.md)
+- [Public API Inventory (toward 1.0)](docs/api-inventory.md)
 
 ### Recipes
 - [ETL Pipeline](docs/recipes/etl_pipeline.md)
@@ -270,6 +276,14 @@ ruff format --check iceframe/ tests/
 mypy iceframe/
 ```
 
+Two more suites need services, and CI runs both. `tests/test_integrations_real.py`
+exercises DataFusion, Ray, Altair, Delta, Lance, Vortex, Excel, SQL, XML,
+Stata, SPSS, caching, Pydantic and Kafka against the real packages (each test
+skips if its package is missing; Kafka needs `ICEFRAME_TEST_KAFKA_BOOTSTRAP`).
+`tests/test_catalog_compat.py` runs every feature check against Apache Polaris
+and the Iceberg REST reference catalog. `ci/catalogs-compose.yml` starts all
+three services; its header has the exact commands.
+
 The core suite needs **no credentials and no network**: a session-scoped
 fixture builds a PyIceberg `sql` (SQLite) catalog with a `file://` warehouse.
 Before 0.13.0 the read, write, query-builder, schema and stats tests only ran
@@ -303,7 +317,7 @@ IceFrame builds on top of PyIceberg, adding high-level abstractions and missing 
 
 Being straight about the limits:
 
-- **Merge-on-read delete *writes* are not supported.** PyIceberg 0.11 has no public delete-file writer, so `MoRWriter.write_position_deletes` / `write_equality_deletes` raise `UnsupportedOperationError`. Deletes are copy-on-write. Reading tables that already contain delete files works fine.
+- **Merge-on-read delete *writes* are not supported.** PyIceberg (through 0.12) has no public delete-file writer, so `MoRWriter.write_position_deletes` / `write_equality_deletes` raise `UnsupportedOperationError`. Deletes are copy-on-write. Reading tables that already contain delete files works fine. See [the status and plan](docs/merge_on_read.md).
 - **`QueryBuilder.merge` with column-level update rules reads the whole target table** and overwrites it. Use `ice.upsert(...)` (native, incremental, atomic) whenever "replace matched rows wholesale" is what you want.
 - **Joins read each joined table in full.** Only the driving table gets pushdown.
 - **Z-order is an approximation** — a hierarchical sort, not a bit-interleaved Z-curve. The returned `strategy` says so.
