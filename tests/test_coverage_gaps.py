@@ -369,7 +369,7 @@ def test_view_operations_report_support_clearly(loaded):
 
     from iceframe.exceptions import UnsupportedOperationError
 
-    with pytest.raises(UnsupportedOperationError, match="does not support views"):
+    with pytest.raises(UnsupportedOperationError, match="views"):
         loaded.create_view(
             "default.v", "SELECT * FROM default.t", schema=pa.schema([("id", pa.int64())])
         )

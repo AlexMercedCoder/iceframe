@@ -67,3 +67,6 @@ test_warehouse_*/
 test_warehouse_maint/
 tmp_catalog_repro/
 .pytest_cache/.ruff_cache/
+
+# Generated for ci/catalogs-compose.yml
+ci/passwd

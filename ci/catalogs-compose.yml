@@ -1,0 +1,52 @@
+# Catalogs and a Kafka broker for the compatibility and streaming tests.
+#
+#   export ICEFRAME_WH=/tmp/iceframe-wh ICEFRAME_UID=$(id -u) ICEFRAME_GID=$(id -g)
+#   mkdir -p $ICEFRAME_WH/rest $ICEFRAME_WH/polaris
+#   docker run --rm --entrypoint cat apache/polaris:latest /etc/passwd > ci/passwd
+#   echo "host:x:$ICEFRAME_UID:$ICEFRAME_GID::/home/polaris:/bin/sh" >> ci/passwd
+#   docker compose -f ci/catalogs-compose.yml up -d
+#   python scripts/bootstrap_polaris.py http://localhost:18182 file://$ICEFRAME_WH/polaris
+#
+# The warehouse is mounted at the same path inside and outside the containers,
+# because the catalogs write metadata and PyIceberg writes data files there
+# directly. Polaris runs as the host user (with a passwd entry, which Hadoop's
+# local filesystem needs) so the test process can write into the table
+# directories Polaris creates.
+services:
+  rest:
+    image: apache/iceberg-rest-fixture:latest
+    ports: ["18181:8181"]
+    environment:
+      CATALOG_WAREHOUSE: file://${ICEFRAME_WH}/rest
+    volumes:
+      - ${ICEFRAME_WH}/rest:${ICEFRAME_WH}/rest
+
+  polaris:
+    image: apache/polaris:latest
+    user: "${ICEFRAME_UID}:${ICEFRAME_GID}"
+    ports: ["18182:8181", "18282:8182"]
+    environment:
+      POLARIS_BOOTSTRAP_CREDENTIALS: POLARIS,root,s3cr3t
+      polaris.realm-context.realms: POLARIS
+      polaris.features."ALLOW_INSECURE_STORAGE_TYPES": "true"
+      polaris.features."SUPPORTED_CATALOG_STORAGE_TYPES": '["FILE","S3"]'
+      polaris.features."DROP_WITH_PURGE_ENABLED": "true"
+      polaris.readiness.ignore-severe-issues: "true"
+    volumes:
+      - ${ICEFRAME_WH}/polaris:${ICEFRAME_WH}/polaris
+      - ./passwd:/etc/passwd:ro
+
+  kafka:
+    image: apache/kafka:3.9.1
+    ports: ["19092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0

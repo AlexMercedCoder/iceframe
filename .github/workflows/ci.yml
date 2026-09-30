@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly, so the PyIceberg-main job warns about upstream breaks early.
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -60,6 +63,99 @@ jobs:
         with:
           name: coverage-xml
           path: coverage.xml
+
+  pyiceberg-floor:
+    name: Test (PyIceberg 0.11 floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" "pyiceberg[sql-sqlite]==0.11.1"
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+  pyiceberg-main:
+    name: Test (PyIceberg main, early warning)
+    runs-on: ubuntu-latest
+    # Upstream main may break us before a release does; report, don't block.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install --upgrade "pyiceberg[sql-sqlite] @ git+https://github.com/apache/iceberg-python.git@main"
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+  integrations:
+    name: Integrations (real optional libraries, Kafka)
+    runs-on: ubuntu-latest
+    env:
+      ICEFRAME_WH: /tmp/iceframe-wh
+      ICEFRAME_TEST_KAFKA_BOOTSTRAP: localhost:19092
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Start Kafka
+        run: docker compose -f ci/catalogs-compose.yml up -d kafka
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,datafusion,distributed,viz,delta,lance,vortex,hudi,excel,sql,xml,stats,cache,pydantic,streaming,monitoring]" xlsxwriter
+      - name: Run integration tests
+        run: python -m pytest tests/test_integrations_real.py -v -rs
+
+  catalogs:
+    name: Catalog compatibility (REST reference, Apache Polaris)
+    runs-on: ubuntu-latest
+    env:
+      ICEFRAME_WH: /tmp/iceframe-wh
+      ICEFRAME_COMPAT_REST_URI: http://localhost:18181
+      ICEFRAME_COMPAT_POLARIS_URI: http://localhost:18182/api/catalog
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Start catalogs
+        run: |
+          mkdir -p "$ICEFRAME_WH/rest" "$ICEFRAME_WH/polaris"
+          docker run --rm --entrypoint cat apache/polaris:latest /etc/passwd > ci/passwd
+          echo "host:x:$(id -u):$(id -g)::/home/polaris:/bin/sh" >> ci/passwd
+          ICEFRAME_UID=$(id -u) ICEFRAME_GID=$(id -g) docker compose -f ci/catalogs-compose.yml up -d rest polaris
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Bootstrap Polaris
+        run: python scripts/bootstrap_polaris.py http://localhost:18182 "file://$ICEFRAME_WH/polaris"
+      - name: Run compatibility tests
+        run: python -m pytest tests/test_catalog_compat.py -v -rs
+      - name: Generate compatibility matrix
+        if: always()
+        run: python scripts/compat_matrix.py > compatibility.md
+      - name: Upload matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-matrix
+          path: compatibility.md
 
   typecheck:
     name: Type check (full package)

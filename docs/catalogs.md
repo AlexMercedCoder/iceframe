@@ -2,12 +2,16 @@
 
 IceFrame passes its catalog configuration straight through to
 `pyiceberg.catalog.load_catalog`, so **every catalog PyIceberg supports works**.
-This page says which ones are actually exercised and what to expect.
+This page says which ones are actually exercised and what to expect. For a
+feature-by-feature result per catalog, see the
+[compatibility matrix](compatibility.md), which is generated from the tests.
 
 | Catalog | `type` | Tested in CI | Views | Notes |
 |---|---|---|---|---|
-| REST (Dremio, Polaris, Tabular, …) | `rest` | Opt-in (`pytest --live`) | Catalog-dependent | Credential vending supported. The primary production target. |
-| SQL / SQLite | `sql` | **Yes — the default test backend** | No | `uri="sqlite:///path/catalog.db"`. Zero-setup local development. |
+| Apache Polaris | `rest` | **Yes, every feature check** (since 0.15.0) | Yes | Tested with FILE storage and OAuth client credentials. See `ci/catalogs-compose.yml`. |
+| Iceberg REST reference (`apache/iceberg-rest-fixture`) | `rest` | **Yes, every feature check** (since 0.15.0) | Yes | The spec's reference server; a good proxy for spec-compliant REST catalogs. |
+| Other REST catalogs (Dremio, Tabular, Lakekeeper, …) | `rest` | Opt-in (`pytest --live`) | Catalog-dependent | Credential vending supported. Expected to match the REST results above; not verified in CI. |
+| SQL / SQLite | `sql` | **Yes, the default test backend** | No | `uri="sqlite:///path/catalog.db"`. Zero-setup local development. |
 | SQL / PostgreSQL | `sql` | No | No | Same driver, `uri="postgresql://…"`. Requires `sqlalchemy` + a driver. |
 | In-memory | `memory` | No | No | Ephemeral; useful for quick experiments. |
 | AWS Glue | `glue` | No | No | Requires `iceframe[aws]`. Works by pass-through. |
