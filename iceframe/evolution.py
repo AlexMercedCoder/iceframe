@@ -3,6 +3,14 @@ Partition evolution support.
 """
 
 from pyiceberg.table import Table
+from pyiceberg.transforms import (
+    BucketTransform,
+    DayTransform,
+    HourTransform,
+    MonthTransform,
+    TruncateTransform,
+    YearTransform,
+)
 
 
 class PartitionEvolution:
@@ -21,32 +29,32 @@ class PartitionEvolution:
     def add_bucket_partition(self, source_column: str, num_buckets: int) -> None:
         """Add a bucket partition field"""
         with self.table.update_spec() as update:
-            update.add_bucket(source_column, num_buckets)
+            update.add_field(source_column, BucketTransform(num_buckets))
 
     def add_truncate_partition(self, source_column: str, width: int) -> None:
         """Add a truncate partition field"""
         with self.table.update_spec() as update:
-            update.add_truncate(source_column, width)
+            update.add_field(source_column, TruncateTransform(width))
 
     def add_year_partition(self, source_column: str) -> None:
         """Add a year partition field"""
         with self.table.update_spec() as update:
-            update.add_year(source_column)
+            update.add_field(source_column, YearTransform())
 
     def add_month_partition(self, source_column: str) -> None:
         """Add a month partition field"""
         with self.table.update_spec() as update:
-            update.add_month(source_column)
+            update.add_field(source_column, MonthTransform())
 
     def add_day_partition(self, source_column: str) -> None:
         """Add a day partition field"""
         with self.table.update_spec() as update:
-            update.add_day(source_column)
+            update.add_field(source_column, DayTransform())
 
     def add_hour_partition(self, source_column: str) -> None:
         """Add an hour partition field"""
         with self.table.update_spec() as update:
-            update.add_hour(source_column)
+            update.add_field(source_column, HourTransform())
 
     def remove_partition(self, source_column: str) -> None:
         """Remove a partition field"""

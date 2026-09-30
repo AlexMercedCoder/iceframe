@@ -7,6 +7,7 @@ from typing import Any
 from pyiceberg.table import Table
 
 from iceframe.compaction import CompactionManager
+from iceframe.exceptions import ValidationError
 from iceframe.gc import GarbageCollector
 
 
@@ -45,29 +46,37 @@ class StoredProcedures:
         elif proc == "fast_forward":
             # Requires BranchManager logic
             from iceframe.branching import BranchManager
+
             bm = BranchManager(self.table)
-            return bm.fast_forward(kwargs.get("branch", "main"), kwargs.get("to_branch"))
+            to_branch = kwargs.get("to_branch")
+            if not isinstance(to_branch, str):
+                raise ValidationError("fast_forward requires a string to_branch")
+            return bm.fast_forward(kwargs.get("branch", "main"), to_branch)
 
         elif proc == "rewrite_manifests":
             return self.compaction.rewrite_manifests()
 
         elif proc == "rollback_to_snapshot":
             from iceframe.rollback import RollbackManager
+
             rm = RollbackManager(self.table)
             return rm.rollback_to_snapshot(kwargs["snapshot_id"])
 
         elif proc == "rollback_to_timestamp":
             from iceframe.rollback import RollbackManager
+
             rm = RollbackManager(self.table)
             return rm.rollback_to_timestamp(kwargs["timestamp_ms"])
 
         elif proc == "set_current_snapshot":
             from iceframe.rollback import RollbackManager
+
             rm = RollbackManager(self.table)
             return rm.set_current_snapshot(kwargs["snapshot_id"])
 
         elif proc == "add_files":
             from iceframe.ingestion import DataIngestion
+
             di = DataIngestion(self.table)
             return di.add_files(kwargs["file_paths"])
 

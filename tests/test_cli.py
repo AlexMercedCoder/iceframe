@@ -11,16 +11,19 @@ from iceframe.cli import app
 
 runner = CliRunner()
 
+
 @pytest.fixture
 def mock_ice_frame():
     with patch("iceframe.cli.IceFrame") as MockIceFrame:
         mock_instance = MockIceFrame.return_value
         yield mock_instance
 
+
 @pytest.fixture
 def mock_env():
     with patch.dict("os.environ", {"ICEBERG_CATALOG_URI": "http://mock-catalog"}):
         yield
+
 
 def test_list_tables(mock_ice_frame, mock_env):
     """Test list command"""
@@ -32,6 +35,7 @@ def test_list_tables(mock_ice_frame, mock_env):
     assert "table1" in result.stdout
     assert "table2" in result.stdout
     mock_ice_frame.list_tables.assert_called_with("default")
+
 
 def test_describe_table(mock_ice_frame, mock_env):
     """Test describe command"""
@@ -54,6 +58,7 @@ def test_describe_table(mock_ice_frame, mock_env):
     assert "id" in result.stdout
     mock_ice_frame.get_table.assert_called_with("my_table")
 
+
 def test_head_table(mock_ice_frame, mock_env):
     """Test head command"""
     # Mock Polars DataFrame display
@@ -64,6 +69,7 @@ def test_head_table(mock_ice_frame, mock_env):
     assert result.exit_code == 0
     assert "First 10 rows" in result.stdout
     mock_ice_frame.read_table.assert_called_with("my_table", limit=10)
+
 
 def test_missing_env_var():
     """Test error when env var missing"""

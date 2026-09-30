@@ -43,7 +43,8 @@ Modular components for specific capabilities:
 - **Procedures** (`iceframe.procedures`): Stored procedure interface.
 - **Rollback** (`iceframe.rollback`): Snapshot rollback and management.
 - **Catalog Ops** (`iceframe.catalog_ops`): Catalog-level operations.
-- **Async Operations** (`iceframe/async_ops.py`): Non-blocking operations.
+- **Async Operations** (`iceframe/async_ops.py`): A bounded-thread facade over
+  PyIceberg's synchronous APIs, with executor-local catalog clients.
 - **AI Agent** (`iceframe/agent`): Natural language interface with LLM integration.
 - **MCP Server** (`iceframe/mcp_server.py`): Model Context Protocol server.
 - **Pydantic Integration** (`iceframe/pydantic.py`): Schema conversion and data validation.
@@ -56,7 +57,8 @@ Modular components for specific capabilities:
 - **Parallel Operations** (`iceframe.parallel`): Concurrent table operations
 - **Distributed Processing** (`iceframe.distributed`): Ray-based distributed execution
 - **SQL Execution** (`iceframe.datafusion_ops`): Apache DataFusion integration
-- **Connection Pooling** (`iceframe.pool`): Catalog connection pooling
+- **Catalog lifecycle**: one direct catalog handle per synchronous `IceFrame`;
+  async workers create executor-local handles where thread affinity requires it.
 - **Memory Management** (`iceframe.memory`): Lazy reading and memory limits
 - **Query Optimization** (`iceframe.optimizer`): Automatic query optimization
 - **Monitoring** (`iceframe.monitoring`): Query metrics and observability
@@ -85,4 +87,5 @@ An interactive AI assistant (`iceframe-chat`) for natural language interaction w
 - **Pushdown Optimization**: Maximize predicate pushdown to minimize data transfer.
 - **Modularity**: Features are isolated in separate modules to maintain clean code and testability.
 - **Developer Experience**: Fluent APIs, type hinting, and comprehensive documentation.
-- **Async Support**: Non-blocking operations for high-concurrency scenarios.
+- **Async Support**: Keep event loops responsive while bounded worker threads
+  perform synchronous catalog and Arrow work.

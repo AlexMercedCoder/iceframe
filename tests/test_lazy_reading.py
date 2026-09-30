@@ -11,12 +11,15 @@ from iceframe.memory import MemoryManager
 @pytest.fixture
 def mock_iceframe():
     config = {"uri": "http://mock", "type": "rest", "token": "dummy"}
-    with patch('iceframe.core.load_catalog'), \
-         patch('iceframe.core.TableOperations'), \
-         patch('iceframe.core.DataExporter'):
+    with (
+        patch("iceframe.core.load_catalog"),
+        patch("iceframe.core.TableOperations"),
+        patch("iceframe.core.DataExporter"),
+    ):
         ice = IceFrame(config)
         ice._operations = MagicMock()
         return ice
+
 
 def test_scan_batches(mock_iceframe):
     # Mock the table scan and batch reader
@@ -33,6 +36,7 @@ def test_scan_batches(mock_iceframe):
 
     # Let's test operations.scan_batches
     from iceframe.operations import TableOperations
+
     ops = TableOperations(MagicMock())
     ops.get_table = MagicMock(return_value=mock_table)
 
@@ -41,6 +45,7 @@ def test_scan_batches(mock_iceframe):
     mock_table.scan.assert_called_once()
     mock_scan.to_arrow_batch_reader.assert_called_once()
     assert result == mock_reader
+
 
 def test_read_table_chunked(mock_iceframe):
     # Mock scan_batches to return an iterator of batches
@@ -55,4 +60,6 @@ def test_read_table_chunked(mock_iceframe):
     assert isinstance(chunks[0], pl.DataFrame)
     assert chunks[0].height == 2
     assert chunks[1].height == 2
-    mock_iceframe._operations.scan_batches.assert_called_once_with("test_table", columns=None)
+    mock_iceframe._operations.scan_batches.assert_called_once_with(
+        "test_table", columns=None, batch_size=10_000
+    )

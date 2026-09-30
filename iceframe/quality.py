@@ -14,7 +14,7 @@ ignored.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, cast
 
 import polars as pl
 
@@ -61,7 +61,7 @@ class DataValidator:
         self.ice_frame = ice_frame
         self.null_policy = null_policy
 
-    def _resolve_data(self, data: Union[pl.DataFrame, Any, str]) -> pl.DataFrame:
+    def _resolve_data(self, data: pl.DataFrame | Any | str) -> pl.DataFrame:
         """
         Resolve input data to a Polars DataFrame.
 
@@ -75,17 +75,17 @@ class DataValidator:
             return data
 
         # Check for QueryBuilder (duck typing or import)
-        if hasattr(data, 'execute') and callable(data.execute):
-            return data.execute()
+        if hasattr(data, "execute") and callable(data.execute):
+            return cast(pl.DataFrame, data.execute())
 
         if isinstance(data, str):
             if not self.ice_frame:
                 raise ValidationError("IceFrame instance required to execute SQL queries")
-            return self.ice_frame.query_datafusion(data)
+            return cast(pl.DataFrame, self.ice_frame.query_datafusion(data))
 
         raise ValidationError(f"Unsupported data type: {type(data)}")
 
-    def check_nulls(self, data: Union[pl.DataFrame, Any, str], columns: List[str]) -> bool:
+    def check_nulls(self, data: pl.DataFrame | Any | str, columns: list[str]) -> bool:
         """
         Check if specified columns contain null values.
 
@@ -111,9 +111,9 @@ class DataValidator:
 
     def check_constraints(
         self,
-        data: Union[pl.DataFrame, Any, str],
-        constraints: Union[Dict[str, str], List[str], List[pl.Expr]],
-        null_policy: Optional[str] = None,
+        data: pl.DataFrame | Any | str,
+        constraints: dict[str, str] | list[str] | list[pl.Expr],
+        null_policy: str | None = None,
     ) -> bool:
         """
         Check whether every row satisfies the given constraints.
@@ -140,10 +140,11 @@ class DataValidator:
         df = self._resolve_data(data)
         policy = null_policy or self.null_policy
 
+        iterable: list[str | pl.Expr]
         if isinstance(constraints, dict):
             iterable = list(constraints.values())
         else:
-            iterable = list(constraints)
+            iterable = list(cast(list[str | pl.Expr], constraints))
 
         for constraint in iterable:
             if isinstance(constraint, pl.Expr):
@@ -164,10 +165,10 @@ class DataValidator:
 
     def validate(
         self,
-        data: Union[pl.DataFrame, Any, str],
-        checks: List[Any],
-        null_policy: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        data: pl.DataFrame | Any | str,
+        checks: list[Any],
+        null_policy: str | None = None,
+    ) -> dict[str, Any]:
         """
         Run a suite of validation checks.
 
@@ -199,7 +200,7 @@ class DataValidator:
         """
         df = self._resolve_data(data)
         policy = null_policy or self.null_policy
-        results: Dict[str, Any] = {"passed": True, "details": []}
+        results: dict[str, Any] = {"passed": True, "details": []}
 
         def _fail(msg: str) -> None:
             results["passed"] = False
@@ -240,7 +241,7 @@ class DataValidator:
         return results
 
     def _check_dict_constraint(
-        self, df: pl.DataFrame, c: Dict[str, Any], null_policy: Optional[str] = None
+        self, df: pl.DataFrame, c: dict[str, Any], null_policy: str | None = None
     ) -> bool:
         """Evaluate a single dict-shaped constraint. Returns True iff it holds.
 
@@ -250,17 +251,17 @@ class DataValidator:
         col = c.get("column")
         if ctype is None:
             raise ValidationError("Dict constraint requires a 'type' key")
-        if col is None and ctype != "row_count":
-            raise ValidationError(
-                f"Dict constraint of type {ctype!r} requires a 'column' key"
-            )
-        if col is not None and col not in df.columns:
+        if ctype == "row_count":
+            return bool(c.get("min", 0) <= df.height <= c.get("max", float("inf")))
+        if not isinstance(col, str):
+            raise ValidationError(f"Dict constraint of type {ctype!r} requires a 'column' key")
+        if col not in df.columns:
             raise ValidationError(f"Column {col!r} not found in DataFrame")
 
         if ctype == "not_null":
-            return df[col].null_count() == 0
+            return bool(df[col].null_count() == 0)
         if ctype == "unique":
-            return df[col].n_unique() == df.height
+            return bool(df[col].n_unique() == df.height)
         if ctype == "between":
             lo, hi = c["min"], c["max"]
             holds = (pl.col(col) >= lo) & (pl.col(col) <= hi)
@@ -271,11 +272,11 @@ class DataValidator:
         if ctype == "regex":
             holds = pl.col(col).str.contains(c["pattern"])
             return df.filter(_violations(holds, policy)).height == 0
-        if ctype == "row_count":
-            return c.get("min", 0) <= df.height <= c.get("max", float("inf"))
         raise ValidationError(f"Unknown constraint type: {ctype!r}")
 
-    def expect_column_values_to_be_unique(self, data: Union[pl.DataFrame, Any, str], column: str) -> bool:
+    def expect_column_values_to_be_unique(
+        self, data: pl.DataFrame | Any | str, column: str
+    ) -> bool:
         """Expect column values to be unique."""
         df = self._resolve_data(data)
         if column not in df.columns:
@@ -283,7 +284,11 @@ class DataValidator:
         return df[column].n_unique() == df.height
 
     def expect_column_values_to_be_between(
-        self, data: Union[pl.DataFrame, Any, str], column: str, min_value: Union[int, float], max_value: Union[int, float]
+        self,
+        data: pl.DataFrame | Any | str,
+        column: str,
+        min_value: int | float,
+        max_value: int | float,
     ) -> bool:
         """Expect column values to be between min_value and max_value (inclusive)."""
         df = self._resolve_data(data)
@@ -293,7 +298,9 @@ class DataValidator:
         holds = (pl.col(column) >= min_value) & (pl.col(column) <= max_value)
         return df.filter(_violations(holds, self.null_policy)).height == 0
 
-    def expect_column_values_to_match_regex(self, data: Union[pl.DataFrame, Any, str], column: str, regex: str) -> bool:
+    def expect_column_values_to_match_regex(
+        self, data: pl.DataFrame | Any | str, column: str, regex: str
+    ) -> bool:
         """Expect column values to match regex."""
         df = self._resolve_data(data)
         if column not in df.columns:
@@ -302,7 +309,9 @@ class DataValidator:
         holds = pl.col(column).str.contains(regex)
         return df.filter(_violations(holds, self.null_policy)).height == 0
 
-    def expect_column_values_to_be_in_set(self, data: Union[pl.DataFrame, Any, str], column: str, value_set: List[Any]) -> bool:
+    def expect_column_values_to_be_in_set(
+        self, data: pl.DataFrame | Any | str, column: str, value_set: list[Any]
+    ) -> bool:
         """Expect column values to be in a set of values."""
         df = self._resolve_data(data)
         if column not in df.columns:
@@ -311,7 +320,9 @@ class DataValidator:
         holds = pl.col(column).is_in(value_set)
         return df.filter(_violations(holds, self.null_policy)).height == 0
 
-    def expect_column_values_to_not_be_null(self, data: Union[pl.DataFrame, Any, str], column: str) -> bool:
+    def expect_column_values_to_not_be_null(
+        self, data: pl.DataFrame | Any | str, column: str
+    ) -> bool:
         """Expect column values to not be null."""
         df = self._resolve_data(data)
         if column not in df.columns:
@@ -319,7 +330,7 @@ class DataValidator:
         return df[column].null_count() == 0
 
     def expect_table_row_count_to_be_between(
-        self, data: Union[pl.DataFrame, Any, str], min_value: int, max_value: int
+        self, data: pl.DataFrame | Any | str, min_value: int, max_value: int
     ) -> bool:
         """Expect table row count to be between min and max."""
         df = self._resolve_data(data)

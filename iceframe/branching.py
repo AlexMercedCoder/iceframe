@@ -2,8 +2,6 @@
 Branching and tagging support for IceFrame.
 """
 
-from typing import List, Optional
-
 from pyiceberg.table import Table
 
 from iceframe.exceptions import UnsupportedOperationError
@@ -19,7 +17,7 @@ class BranchManager:
     def __init__(self, table: Table):
         self.table = table
 
-    def create_branch(self, branch_name: str, snapshot_id: Optional[int] = None) -> None:
+    def create_branch(self, branch_name: str, snapshot_id: int | None = None) -> None:
         """
         Create a new branch.
 
@@ -43,13 +41,15 @@ class BranchManager:
                 raise NotImplementedError("Branch creation requires PyIceberg 0.6.0+")
 
         except AttributeError:
-            raise NotImplementedError("Branching not supported by this PyIceberg version or catalog") from None
+            raise NotImplementedError(
+                "Branching not supported by this PyIceberg version or catalog"
+            ) from None
 
     def tag_snapshot(
         self,
         snapshot_id: int,
         tag_name: str,
-        max_ref_age_ms: Optional[int] = None,
+        max_ref_age_ms: int | None = None,
     ) -> None:
         """
         Tag a specific snapshot.
@@ -84,31 +84,26 @@ class BranchManager:
                 f"Tag removal is not supported by this PyIceberg version or catalog: {e}"
             ) from e
 
-    def list_tags(self) -> List[str]:
+    def list_tags(self) -> list[str]:
         """List all tag names."""
         from pyiceberg.table.refs import SnapshotRefType
 
         refs = getattr(self.table.metadata, "refs", {}) or {}
-        return [
-            name
-            for name, ref in refs.items()
-            if ref.snapshot_ref_type == SnapshotRefType.TAG
-        ]
+        return [name for name, ref in refs.items() if ref.snapshot_ref_type == SnapshotRefType.TAG]
 
-    def list_branches(self) -> List[str]:
+    def list_branches(self) -> list[str]:
         """
         List all branches.
 
         Returns:
             List of branch names
         """
-        try:
-            # PyIceberg stores refs in table metadata
-            if hasattr(self.table.metadata, "refs"):
-                return list(self.table.metadata.refs.keys())
-            return ["main"]
-        except AttributeError:
-            return ["main"]
+        from pyiceberg.table.refs import SnapshotRefType
+
+        refs = getattr(self.table.metadata, "refs", {}) or {}
+        return [
+            name for name, ref in refs.items() if ref.snapshot_ref_type == SnapshotRefType.BRANCH
+        ]
 
     def fast_forward(self, branch: str, to_branch: str) -> None:
         """
@@ -135,16 +130,19 @@ class BranchManager:
                     # Native implementation for older PyIceberg versions
                     # We manually construct the update and commit via transaction
                     try:
+                        from pyiceberg.table.refs import SnapshotRefType
                         from pyiceberg.table.update.snapshot import SetSnapshotRefUpdate
 
                         # Create transaction
                         txn = self.table.transaction()
 
                         # Create update
-                        update = SetSnapshotRefUpdate(
-                            snapshot_id=target_snapshot_id,
-                            ref_name=branch,
-                            type="branch"
+                        update = SetSnapshotRefUpdate.model_validate(
+                            {
+                                "snapshot-id": target_snapshot_id,
+                                "ref-name": branch,
+                                "type": SnapshotRefType.BRANCH,
+                            }
                         )
 
                         # Inject update (hack for older versions)
@@ -157,7 +155,9 @@ class BranchManager:
                         txn.commit_transaction()
 
                     except ImportError:
-                        raise NotImplementedError("Fast-forward requires PyIceberg 0.6.0+ or SetSnapshotRefUpdate") from None
+                        raise NotImplementedError(
+                            "Fast-forward requires PyIceberg 0.6.0+ or SetSnapshotRefUpdate"
+                        ) from None
             else:
                 raise NotImplementedError("Fast-forward requires PyIceberg 0.6.0+")
         except AttributeError:

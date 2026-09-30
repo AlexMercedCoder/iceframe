@@ -6,7 +6,7 @@ This module provides a unified expression system that can be translated to:
 2. Polars expressions for local processing
 """
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, cast
 
 import polars as pl
 from pyiceberg.expressions import (
@@ -20,19 +20,19 @@ from pyiceberg.expressions import (
     IsNull,
     LessThan,
     LessThanOrEqual,
-    Literal,
     Not,
     NotEqualTo,
     NotNull,
     Or,
     Reference,
+    literal,
 )
 
 
 class Expression:
     """Base class for all expressions"""
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         """
         Return ``(iceberg_expression, fully_pushed)``.
 
@@ -57,7 +57,7 @@ class Expression:
         """Convert to Polars expression"""
         raise NotImplementedError
 
-    def referenced_columns(self) -> Optional[Set[str]]:
+    def referenced_columns(self) -> set[str] | None:
         """
         Names of the table columns this expression reads, or ``None`` when that
         can't be determined statically.
@@ -94,7 +94,7 @@ class Expression:
     def __invert__(self):
         return NotExpression(self)
 
-    def is_in(self, values: List[Any]):
+    def is_in(self, values: list[Any]):
         return InExpression(self, values)
 
     def is_null(self):
@@ -113,7 +113,7 @@ class Column(Expression):
     def __init__(self, name: str):
         self.name = name
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         # A bare column reference is not a valid Iceberg row filter (it's a
         # term, not a predicate). If someone filters on a boolean column
         # directly, evaluate it locally rather than handing PyIceberg a
@@ -122,7 +122,6 @@ class Column(Expression):
 
     def to_iceberg(self):
         return Reference(self.name)
-
 
     def to_polars(self):
         return pl.col(self.name)
@@ -137,13 +136,12 @@ class LiteralValue(Expression):
     def __init__(self, value: Any):
         self.value = value
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         # A literal is a term, not a predicate — never pushable on its own.
         return AlwaysTrue(), False
 
     def to_iceberg(self):
-        return Literal(self.value)
-
+        return literal(self.value)
 
     def to_polars(self):
         return pl.lit(self.value)
@@ -160,7 +158,7 @@ class BinaryExpression(Expression):
         self.right = right if isinstance(right, Expression) else LiteralValue(right)
         self.op = op
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         # PyIceberg expressions expect a Reference on the left and a Literal on
         # the right for simple predicates. Anything else (column-to-column
         # comparison, expression on the left) can't be pushed down, so we push
@@ -190,7 +188,6 @@ class BinaryExpression(Expression):
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         left_expr = self.left.to_polars()
@@ -227,7 +224,7 @@ class BooleanExpression(Expression):
         self.right = right
         self.op = op
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         left_ice, left_ok = self.left.pushdown()
         right_ice, right_ok = self.right.pushdown()
         fully = left_ok and right_ok
@@ -246,7 +243,6 @@ class BooleanExpression(Expression):
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         left_pl = self.left.to_polars()
@@ -273,7 +269,7 @@ class NotExpression(Expression):
     def __init__(self, expr: Expression):
         self.expr = expr
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         # Negating a partially-pushed predicate is not sound: Not() of a
         # superset is a *subset* of the real answer, which would silently drop
         # rows. So a NOT is only pushable when its operand pushes fully.
@@ -297,18 +293,17 @@ class NotExpression(Expression):
 class InExpression(Expression):
     """Represents IN operation"""
 
-    def __init__(self, expr: Expression, values: List[Any]):
+    def __init__(self, expr: Expression, values: list[Any]):
         self.expr = expr
         self.values = values
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         if isinstance(self.expr, Column):
-            return In(self.expr.name, self.values), True
+            return In(term=Reference(self.expr.name), values=cast(Any, set(self.values))), True
         return AlwaysTrue(), False
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         return self.expr.to_polars().is_in(self.values)
@@ -323,14 +318,13 @@ class IsNullExpression(Expression):
     def __init__(self, expr: Expression):
         self.expr = expr
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         if isinstance(self.expr, Column):
-            return IsNull(self.expr.name), True
+            return IsNull(term=Reference(self.expr.name)), True
         return AlwaysTrue(), False
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         return self.expr.to_polars().is_null()
@@ -345,14 +339,13 @@ class IsNotNullExpression(Expression):
     def __init__(self, expr: Expression):
         self.expr = expr
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         if isinstance(self.expr, Column):
-            return NotNull(self.expr.name), True
+            return NotNull(term=Reference(self.expr.name)), True
         return AlwaysTrue(), False
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         return self.expr.to_polars().is_not_null()
@@ -368,13 +361,12 @@ class AliasExpression(Expression):
         self.expr = expr
         self.name = name
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         # Aliasing doesn't affect predicate pushdown
         return self.expr.pushdown()
 
     def to_iceberg(self):
         return self.pushdown()[0]
-
 
     def to_polars(self):
         return self.expr.to_polars().alias(self.name)
@@ -383,7 +375,7 @@ class AliasExpression(Expression):
         return self.expr.referenced_columns()
 
 
-def plan_pushdown(exprs: List["Expression"]) -> Tuple[Any, List["Expression"]]:
+def plan_pushdown(exprs: list["Expression"]) -> tuple[Any, list["Expression"]]:
     """
     Split a list of IceFrame predicates into a single pushable Iceberg
     ``row_filter`` and the list of predicates that must still be applied
@@ -397,8 +389,8 @@ def plan_pushdown(exprs: List["Expression"]) -> Tuple[Any, List["Expression"]]:
     Returns:
         ``(iceberg_row_filter, residual_expressions)``
     """
-    pushed: List[Any] = []
-    residual: List[Expression] = []
+    pushed: list[Any] = []
+    residual: list[Expression] = []
 
     for expr in exprs:
         ice, fully = expr.pushdown()

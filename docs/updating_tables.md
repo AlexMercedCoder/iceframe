@@ -41,11 +41,13 @@ ice.overwrite_table("daily_report", today_data)
 
 ## Upserts / Merge
 
-Currently, IceFrame supports Append and Overwrite. Full Merge/Upsert functionality (Merge-on-Read) depends on the underlying PyIceberg support for your specific catalog and table version (v2).
+Use PyIceberg's native atomic upsert when matched rows can be replaced wholesale:
 
-For basic updates, you can:
-1. Read the table
-2. Modify the DataFrame locally
-3. Overwrite the table (for small tables)
+```python
+result = ice.upsert("users", incoming, join_cols=["id"])
+```
 
-For large tables, use SQL-based engines (like Spark, Trino, or Dremio) connected to the same catalog for complex merge operations.
+`QueryBuilder.merge()` supports column-level update rules, but that fallback
+materializes and overwrites the full target table. Reserve it for small tables.
+For large rule-based merges, use Spark, Trino, Dremio, or another distributed
+engine connected to the catalog.

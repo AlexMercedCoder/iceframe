@@ -47,3 +47,20 @@ changes = ice.get_changes(
 print(f"Added: {changes['added'].height} rows")
 print(f"Deleted: {changes['deleted'].height} rows")
 ```
+
+Without keys this is a full-row set difference: updates appear as one delete
+plus one insert and `modified` is empty. Supply unique keys for update-aware CDC:
+
+```python
+changes = ice.get_changes(
+    "users",
+    from_snapshot_id=snapshot1,
+    to_snapshot_id=snapshot2,
+    primary_keys=["user_id"],
+)
+print(changes["modified"])
+```
+
+`get_row_changes()` names the keyless behavior explicitly. Both modes read the
+two snapshots locally; they are correctness conveniences, not a distributed
+change-feed engine.

@@ -2,22 +2,25 @@
 Distributed processing using Ray.
 """
 
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any, cast
 
 import polars as pl
 
 try:
     import ray
+
     RAY_AVAILABLE = True
 except ImportError:
     RAY_AVAILABLE = False
+
 
 class RayExecutor:
     """
     Execute tasks in parallel using Ray.
     """
 
-    def __init__(self, address: Optional[str] = None, **ray_init_kwargs):
+    def __init__(self, address: str | None = None, **ray_init_kwargs):
         """
         Initialize Ray executor.
 
@@ -31,7 +34,7 @@ class RayExecutor:
         if not ray.is_initialized():
             ray.init(address=address, **ray_init_kwargs)
 
-    def map(self, func: Callable, items: List[Any], **kwargs) -> List[Any]:
+    def map(self, func: Callable, items: list[Any], **kwargs) -> list[Any]:
         """
         Apply a function to a list of items in parallel.
 
@@ -43,6 +46,7 @@ class RayExecutor:
         Returns:
             List of results
         """
+
         # Define remote function wrapper
         @ray.remote
         def wrapper(item, **kw):
@@ -52,14 +56,11 @@ class RayExecutor:
         futures = [wrapper.remote(item, **kwargs) for item in items]
 
         # Get results
-        return ray.get(futures)
+        return cast(list[Any], ray.get(futures))
 
     def read_tables_parallel(
-        self,
-        ice_frame_config: Dict[str, Any],
-        table_names: List[str],
-        **read_kwargs
-    ) -> Dict[str, pl.DataFrame]:
+        self, ice_frame_config: dict[str, Any], table_names: list[str], **read_kwargs
+    ) -> dict[str, pl.DataFrame]:
         """
         Read multiple tables in parallel using Ray.
 
@@ -77,20 +78,20 @@ class RayExecutor:
         @ray.remote
         def read_task(config, table, kwargs):
             from iceframe.core import IceFrame
+
             ice = IceFrame(config)
             return ice.read_table(table, **kwargs)
 
         futures = {
-            table: read_task.remote(ice_frame_config, table, read_kwargs)
-            for table in table_names
+            table: read_task.remote(ice_frame_config, table, read_kwargs) for table in table_names
         }
 
         results = {}
         for table, future in futures.items():
             try:
                 results[table] = ray.get(future)
-            except Exception:
-                results[table] = None # Or handle error appropriately
+            except Exception as exc:
+                raise RuntimeError(f"Distributed read failed for {table}: {exc}") from exc
 
         return results
 

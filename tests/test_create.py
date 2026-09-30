@@ -38,6 +38,7 @@ def test_create_table_with_dict_schema(ice_frame, cleanup_table):
 def test_create_table_with_namespace(ice_frame, sample_schema, cleanup_table):
     """Test creating a table with explicit namespace"""
     import time
+
     table_name = f"default.test_ns_{int(time.time() * 1000)}"
     cleanup_table(table_name)
 

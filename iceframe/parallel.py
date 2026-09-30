@@ -2,8 +2,9 @@
 Parallel table operations for IceFrame.
 """
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 import polars as pl
 
@@ -23,11 +24,8 @@ class ParallelExecutor:
         self.max_workers = max_workers
 
     def read_tables_parallel(
-        self,
-        ice_frame,
-        table_names: List[str],
-        **read_kwargs
-    ) -> Dict[str, pl.DataFrame]:
+        self, ice_frame, table_names: list[str], return_exceptions: bool = False, **read_kwargs
+    ) -> dict[str, pl.DataFrame]:
         """
         Read multiple tables in parallel.
 
@@ -52,16 +50,15 @@ class ParallelExecutor:
                 try:
                     results[table_name] = future.result()
                 except Exception as e:
-                    results[table_name] = {"error": str(e)}
+                    if not return_exceptions:
+                        raise
+                    results[table_name] = e
 
         return results
 
     def execute_parallel(
-        self,
-        func: Callable,
-        items: List[Any],
-        **kwargs
-    ) -> List[Any]:
+        self, func: Callable, items: list[Any], return_exceptions: bool = False, **kwargs
+    ) -> list[Any]:
         """
         Execute a function in parallel over a list of items.
 
@@ -82,6 +79,8 @@ class ParallelExecutor:
                 try:
                     results.append(future.result())
                 except Exception as e:
-                    results.append({"error": str(e)})
+                    if not return_exceptions:
+                        raise
+                    results.append(e)
 
         return results

@@ -3,7 +3,8 @@ Anthropic Claude LLM provider for IceFrame AI Agent.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from iceframe.agent.llm_base import BaseLLM, LLMConfig
 
@@ -13,17 +14,23 @@ class AnthropicLLM(BaseLLM):
 
     def __init__(self, config: LLMConfig):
         super().__init__(config)
+        self.client: Any
         try:
             from anthropic import Anthropic
+
             self.client = Anthropic(api_key=config.api_key)
         except ImportError:
-            raise ImportError("anthropic package required. Install with: pip install 'iceframe[agent]'") from None
+            raise ImportError(
+                "anthropic package required. Install with: pip install 'iceframe[agent]'"
+            ) from None
 
-    def chat(self, messages: List[Dict[str, str]], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    def chat(
+        self, messages: list[dict[str, str]], tools: list[dict] | None = None
+    ) -> dict[str, Any]:
         """Send chat messages to Anthropic"""
         # Anthropic expects system message separately
         system_msg = None
-        user_messages = []
+        user_messages: list[dict[str, str]] = []
 
         for msg in messages:
             if msg["role"] == "system":
@@ -31,11 +38,11 @@ class AnthropicLLM(BaseLLM):
             else:
                 user_messages.append(msg)
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.config.model,
             "messages": user_messages,
             "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature
+            "temperature": self.config.temperature,
         }
 
         if system_msg:
@@ -46,7 +53,7 @@ class AnthropicLLM(BaseLLM):
 
         response = self.client.messages.create(**kwargs)
 
-        result = {"content": ""}
+        result: dict[str, Any] = {"content": ""}
 
         for block in response.content:
             if block.type == "text":
@@ -54,18 +61,16 @@ class AnthropicLLM(BaseLLM):
             elif block.type == "tool_use":
                 if "tool_calls" not in result:
                     result["tool_calls"] = []
-                result["tool_calls"].append({
-                    "id": block.id,
-                    "name": block.name,
-                    "arguments": json.dumps(block.input)
-                })
+                result["tool_calls"].append(
+                    {"id": block.id, "name": block.name, "arguments": json.dumps(block.input)}
+                )
 
         return result
 
-    def stream_chat(self, messages: List[Dict[str, str]]):
+    def stream_chat(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Stream chat responses from Anthropic"""
         system_msg = None
-        user_messages = []
+        user_messages: list[dict[str, str]] = []
 
         for msg in messages:
             if msg["role"] == "system":
@@ -73,12 +78,12 @@ class AnthropicLLM(BaseLLM):
             else:
                 user_messages.append(msg)
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.config.model,
             "messages": user_messages,
             "max_tokens": self.config.max_tokens,
             "temperature": self.config.temperature,
-            "stream": True
+            "stream": True,
         }
 
         if system_msg:

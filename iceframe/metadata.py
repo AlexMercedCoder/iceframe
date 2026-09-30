@@ -11,12 +11,13 @@ introspection Spark users expect::
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 import polars as pl
 from pyiceberg.table import Table
 
 from iceframe.exceptions import UnsupportedOperationError
+from iceframe.utils import from_arrow_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,9 @@ class MetadataInspector:
                 f"Metadata table {name!r} is not available in this PyIceberg version. "
                 f"Available: {', '.join(self.available())}"
             )
-        return pl.from_arrow(method(**kwargs))
+        return from_arrow_dataframe(method(**kwargs))
 
-    def available(self) -> List[str]:
+    def available(self) -> list[str]:
         """Metadata table names actually supported by the installed PyIceberg."""
         return [name for name in METADATA_TABLES if hasattr(self.table.inspect, name)]
 
@@ -59,7 +60,7 @@ class MetadataInspector:
         """One row per snapshot: id, parent, timestamp, operation, summary."""
         return self._frame("snapshots")
 
-    def entries(self, snapshot_id: Optional[int] = None) -> pl.DataFrame:
+    def entries(self, snapshot_id: int | None = None) -> pl.DataFrame:
         """Raw manifest entries (status, snapshot, data file, readable metrics)."""
         return self._frame("entries", snapshot_id=snapshot_id)
 
@@ -67,7 +68,7 @@ class MetadataInspector:
         """Branches and tags."""
         return self._frame("refs")
 
-    def partitions(self, snapshot_id: Optional[int] = None) -> pl.DataFrame:
+    def partitions(self, snapshot_id: int | None = None) -> pl.DataFrame:
         """Per-partition record and file counts."""
         return self._frame("partitions", snapshot_id=snapshot_id)
 
@@ -83,15 +84,15 @@ class MetadataInspector:
         """Snapshot history with ancestry information."""
         return self._frame("history")
 
-    def files(self, snapshot_id: Optional[int] = None) -> pl.DataFrame:
+    def files(self, snapshot_id: int | None = None) -> pl.DataFrame:
         """All files (data + delete) in a snapshot."""
         return self._frame("files", snapshot_id=snapshot_id)
 
-    def data_files(self, snapshot_id: Optional[int] = None) -> pl.DataFrame:
+    def data_files(self, snapshot_id: int | None = None) -> pl.DataFrame:
         """Data files only."""
         return self._frame("data_files", snapshot_id=snapshot_id)
 
-    def delete_files(self, snapshot_id: Optional[int] = None) -> pl.DataFrame:
+    def delete_files(self, snapshot_id: int | None = None) -> pl.DataFrame:
         """Delete files only."""
         return self._frame("delete_files", snapshot_id=snapshot_id)
 

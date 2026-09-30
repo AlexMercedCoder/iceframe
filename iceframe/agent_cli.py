@@ -14,6 +14,7 @@ from rich.prompt import Prompt
 app = typer.Typer(help="IceFrame AI Chat - Interactive AI assistant for Iceberg tables")
 console = Console()
 
+
 @app.command()
 def chat():
     """Start interactive chat with IceFrame AI Agent"""
@@ -21,16 +22,20 @@ def chat():
 
     # Check for catalog config
     if not os.getenv("ICEBERG_CATALOG_URI"):
-        console.print("[red]Error: ICEBERG_CATALOG_URI not set. Configure your catalog in .env[/red]")
+        console.print(
+            "[red]Error: ICEBERG_CATALOG_URI not set. Configure your catalog in .env[/red]"
+        )
         raise typer.Exit(code=1)
 
     # Check for LLM API key
-    has_llm = any([
-        os.getenv("OPENAI_API_KEY"),
-        os.getenv("ANTHROPIC_API_KEY"),
-        os.getenv("GOOGLE_API_KEY"),
-        os.getenv("GEMINI_API_KEY")
-    ])
+    has_llm = any(
+        [
+            os.getenv("OPENAI_API_KEY"),
+            os.getenv("ANTHROPIC_API_KEY"),
+            os.getenv("GOOGLE_API_KEY"),
+            os.getenv("GEMINI_API_KEY"),
+        ]
+    )
 
     if not has_llm:
         console.print("[red]Error: No LLM API key found.[/red]")
@@ -41,29 +46,21 @@ def chat():
     try:
         from iceframe.agent.core import IceFrameAgent
         from iceframe.core import IceFrame
+        from iceframe.utils import load_catalog_config_from_env
 
-        config = {
-            "uri": os.getenv("ICEBERG_CATALOG_URI"),
-            "type": os.getenv("ICEBERG_CATALOG_TYPE", "rest"),
-        }
-
-        # Add optional config
-        if token := os.getenv("ICEBERG_CATALOG_TOKEN"):
-            config["token"] = token
-        if warehouse := os.getenv("ICEBERG_WAREHOUSE"):
-            config["warehouse"] = warehouse
-        if oauth_uri := os.getenv("ICEBERG_OAUTH2_SERVER_URI"):
-            config["oauth2-server-uri"] = oauth_uri
+        config = load_catalog_config_from_env()
 
         ice = IceFrame(config)
         agent = IceFrameAgent(ice)
 
-        console.print(Panel.fit(
-            "[bold cyan]IceFrame AI Chat[/bold cyan]\n"
-            "Ask questions about your Iceberg tables in natural language.\n"
-            "Type 'exit' or 'quit' to end the session.",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel.fit(
+                "[bold cyan]IceFrame AI Chat[/bold cyan]\n"
+                "Ask questions about your Iceberg tables in natural language.\n"
+                "Type 'exit' or 'quit' to end the session.",
+                border_style="cyan",
+            )
+        )
 
         # Detect LLM
         llm_provider = agent.llm.config.provider
@@ -91,11 +88,13 @@ def chat():
                 response = agent.chat(user_input)
 
                 # Display response
-                console.print(Panel(
-                    Markdown(response),
-                    title="[bold blue]Assistant[/bold blue]",
-                    border_style="blue"
-                ))
+                console.print(
+                    Panel(
+                        Markdown(response),
+                        title="[bold blue]Assistant[/bold blue]",
+                        border_style="blue",
+                    )
+                )
                 console.print()
 
             except KeyboardInterrupt:
@@ -107,6 +106,7 @@ def chat():
     except Exception as e:
         console.print(f"[red]Failed to initialize: {e}[/red]")
         raise typer.Exit(code=1) from e
+
 
 if __name__ == "__main__":
     app()

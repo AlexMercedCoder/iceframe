@@ -3,7 +3,7 @@ Table operations for CRUD functionality
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import polars as pl
 import pyarrow as pa
@@ -32,7 +32,7 @@ from pyiceberg.types import (
 
 from iceframe.cache import invalidate_query_cache
 from iceframe.exceptions import CatalogError, SchemaError, ValidationError
-from iceframe.utils import normalize_table_identifier
+from iceframe.utils import from_arrow_dataframe, normalize_table_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ if TYPE_CHECKING:  # pragma: no cover - imports for type annotations only
     from iceframe.expressions import Expression
 
 
-def to_arrow_table(data: Union[pl.DataFrame, pa.Table, Dict[str, list]]) -> pa.Table:
+def to_arrow_table(data: pl.DataFrame | pa.Table | dict[str, list]) -> pa.Table:
     """Coerce the accepted write payload shapes into a PyArrow table."""
     if isinstance(data, pl.DataFrame):
         return data.to_arrow()
@@ -54,7 +54,7 @@ def to_arrow_table(data: Union[pl.DataFrame, pa.Table, Dict[str, list]]) -> pa.T
     raise ValidationError(f"Unsupported data type: {type(data)}")
 
 
-def _resolve_snapshot_for_timestamp(table: Table, as_of_timestamp_ms: int) -> Optional[int]:
+def _resolve_snapshot_for_timestamp(table: Table, as_of_timestamp_ms: int) -> int | None:
     """
     Resolve a millisecond-epoch timestamp to the snapshot id that was current
     at that point in time (the most recent snapshot with
@@ -63,7 +63,7 @@ def _resolve_snapshot_for_timestamp(table: Table, as_of_timestamp_ms: int) -> Op
     Returns ``None`` if no such snapshot exists (i.e. the timestamp predates the
     table's first commit).
     """
-    candidate_id: Optional[int] = None
+    candidate_id: int | None = None
     candidate_ts: int = -1
     try:
         for snap in table.snapshots():
@@ -102,7 +102,7 @@ class TableOperations:
         """
         self.catalog = catalog
 
-    def _convert_schema(self, schema: Union[Schema, pa.Schema, pl.DataFrame, Dict[str, Any]]) -> Schema:
+    def _convert_schema(self, schema: Schema | pa.Schema | pl.DataFrame | dict[str, Any]) -> Schema:
         """
         Convert various schema formats to PyIceberg Schema.
 
@@ -177,7 +177,7 @@ class TableOperations:
 
         raise SchemaError(f"Unsupported schema type: {type(schema)}")
 
-    def _pyarrow_to_iceberg_fields(self, pa_schema: pa.Schema) -> List[NestedField]:
+    def _pyarrow_to_iceberg_fields(self, pa_schema: pa.Schema) -> list[NestedField]:
         """Convert PyArrow schema fields to PyIceberg fields.
 
         Field ids are allocated from a single monotonically increasing counter
@@ -269,6 +269,7 @@ class TableOperations:
             return StructType(*sub_fields)
         else:
             import warnings
+
             warnings.warn(
                 f"PyArrow type {pa_type!r} has no direct Iceberg mapping in IceFrame; "
                 "falling back to StringType. Define the schema explicitly to silence "
@@ -448,10 +449,10 @@ class TableOperations:
     def create_table(
         self,
         table_name: str,
-        schema: Union[Schema, pa.Schema, pl.DataFrame, Dict[str, Any]],
-        partition_spec: Optional[Union[List[tuple], 'PartitionSpec']] = None,
-        sort_order: Optional[Union[List[str], 'SortOrder']] = None,
-        properties: Optional[Dict[str, str]] = None,
+        schema: Schema | pa.Schema | pl.DataFrame | dict[str, Any],
+        partition_spec: Union[list[tuple], "PartitionSpec"] | None = None,
+        sort_order: Union[list[str], "SortOrder"] | None = None,
+        properties: dict[str, str] | None = None,
     ) -> Table:
         """
         Create a new Iceberg table.
@@ -479,6 +480,7 @@ class TableOperations:
         # a CatalogError instead of resurfacing later as a confusing
         # NoSuchTableError.
         from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
         try:
             self.catalog.create_namespace(namespace)
         except NamespaceAlreadyExistsError:
@@ -495,105 +497,106 @@ class TableOperations:
         # If they are just passed as is, PyIceberg might expect specific objects.
         # Ensure we don't pass explicit None if that breaks things, or convert.
 
-        create_kwargs = {
+        create_kwargs: dict[str, Any] = {
             "identifier": full_table_name,
             "schema": iceberg_schema,
             "properties": properties or {},
         }
 
         if partition_spec is not None:
-             if isinstance(partition_spec, list):
-                 from pyiceberg.partitioning import PartitionSpec
-                 from pyiceberg.transforms import (
-                     BucketTransform,
-                     DayTransform,
-                     HourTransform,
-                     IdentityTransform,
-                     MonthTransform,
-                     TruncateTransform,
-                     VoidTransform,
-                     YearTransform,
-                 )
+            if isinstance(partition_spec, list):
+                from pyiceberg.partitioning import PartitionSpec
+                from pyiceberg.transforms import (
+                    BucketTransform,
+                    DayTransform,
+                    HourTransform,
+                    IdentityTransform,
+                    MonthTransform,
+                    TruncateTransform,
+                    VoidTransform,
+                    YearTransform,
+                )
 
-                 # Manual construction if builder_for fails/not available
-                 try:
-                     from pyiceberg.partitioning import PartitionField, PartitionSpec
+                # Manual construction if builder_for fails/not available
+                try:
+                    from pyiceberg.partitioning import PartitionField, PartitionSpec
 
-                     fields = []
-                     field_id_counter = 1000
+                    fields: list[PartitionField] = []
+                    field_id_counter = 1000
 
-                     for col, transform_str in partition_spec:
-                         field = iceberg_schema.find_field(col)
-                         if not field:
-                             raise SchemaError(f"Partition column {col} not found in schema")
+                    for col, transform_str in partition_spec:
+                        field = iceberg_schema.find_field(col)
+                        if not field:
+                            raise SchemaError(f"Partition column {col} not found in schema")
 
-                         transform = None
-                         name = col # default name
+                        transform: Any = None
+                        name = col  # default name
 
-                         if transform_str == "identity":
-                             transform = IdentityTransform()
-                         elif transform_str.startswith("bucket"):
-                             import re
-                             match = re.search(r"bucket\[(\d+)\]", transform_str)
-                             if match:
-                                 transform = BucketTransform(int(match.group(1)))
-                                 name = f"bucket_{col}" # convention
-                             else:
-                                 transform = BucketTransform(16) # default
-                         elif transform_str.startswith("truncate"):
-                             match = re.search(r"truncate\[(\d+)\]", transform_str)
-                             if match:
-                                 transform = TruncateTransform(int(match.group(1)))
-                                 name = f"truncate_{col}"
-                             else:
-                                 transform = TruncateTransform(16)
-                         elif transform_str == "year":
-                             transform = YearTransform()
-                             name = f"{col}_year"
-                         elif transform_str == "month":
-                             transform = MonthTransform()
-                             name = f"{col}_month"
-                         elif transform_str == "day":
-                             transform = DayTransform()
-                             name = f"{col}_day"
-                         elif transform_str == "hour":
-                             transform = HourTransform()
-                             name = f"{col}_hour"
-                         elif transform_str == "void":
-                             transform = VoidTransform()
-                             name = f"{col}_null"
-                         else:
-                             # Default to identity if unknown? or error
-                             logger.warning(
+                        if transform_str == "identity":
+                            transform = IdentityTransform()
+                        elif transform_str.startswith("bucket"):
+                            import re
+
+                            match = re.search(r"bucket\[(\d+)\]", transform_str)
+                            if match:
+                                transform = BucketTransform(int(match.group(1)))
+                                name = f"bucket_{col}"  # convention
+                            else:
+                                transform = BucketTransform(16)  # default
+                        elif transform_str.startswith("truncate"):
+                            match = re.search(r"truncate\[(\d+)\]", transform_str)
+                            if match:
+                                transform = TruncateTransform(int(match.group(1)))
+                                name = f"truncate_{col}"
+                            else:
+                                transform = TruncateTransform(16)
+                        elif transform_str == "year":
+                            transform = YearTransform()
+                            name = f"{col}_year"
+                        elif transform_str == "month":
+                            transform = MonthTransform()
+                            name = f"{col}_month"
+                        elif transform_str == "day":
+                            transform = DayTransform()
+                            name = f"{col}_day"
+                        elif transform_str == "hour":
+                            transform = HourTransform()
+                            name = f"{col}_hour"
+                        elif transform_str == "void":
+                            transform = VoidTransform()
+                            name = f"{col}_null"
+                        else:
+                            # Default to identity if unknown? or error
+                            logger.warning(
                                 "Unknown partition transform %r; using identity", transform_str
                             )
-                             transform = IdentityTransform()
+                            transform = IdentityTransform()
 
-                         fields.append(PartitionField(
-                             source_id=field.field_id,
-                             field_id=field_id_counter,
-                             transform=transform,
-                             name=name
-                         ))
-                         field_id_counter += 1
+                        fields.append(
+                            PartitionField(
+                                source_id=field.field_id,
+                                field_id=field_id_counter,
+                                transform=transform,
+                                name=name,
+                            )
+                        )
+                        field_id_counter += 1
 
-                     create_kwargs["partition_spec"] = PartitionSpec(fields=tuple(fields))
+                    create_kwargs["partition_spec"] = PartitionSpec(fields=tuple(fields))
 
-                 except Exception as e:
-                     logger.warning("Failed to build partition spec: %s", e)
-                     # Fallback
-                     create_kwargs["partition_spec"] = partition_spec
+                except Exception as e:
+                    logger.warning("Failed to build partition spec: %s", e)
+                    # Fallback
+                    create_kwargs["partition_spec"] = partition_spec
 
-             else:
-                 create_kwargs["partition_spec"] = partition_spec
+            else:
+                create_kwargs["partition_spec"] = partition_spec
 
         if sort_order is not None:
-             if isinstance(sort_order, (list, tuple)):
-                 create_kwargs["sort_order"] = self._build_sort_order(
-                     sort_order, iceberg_schema
-                 )
-             else:
-                 create_kwargs["sort_order"] = sort_order
+            if isinstance(sort_order, (list, tuple)):
+                create_kwargs["sort_order"] = self._build_sort_order(sort_order, iceberg_schema)
+            else:
+                create_kwargs["sort_order"] = sort_order
 
         # Create the table.
         # NOTE: We do NOT auto-append data here even if the caller passed a DataFrame /
@@ -604,7 +607,6 @@ class TableOperations:
         # Callers that want the data written should call `append_to_table` themselves.
         return self.catalog.create_table(**create_kwargs)
 
-
     def get_table(self, table_name: str) -> Table:
         """Get a table by name"""
         namespace, table = normalize_table_identifier(table_name)
@@ -613,13 +615,13 @@ class TableOperations:
     def read_table(
         self,
         table_name: str,
-        columns: Optional[List[str]] = None,
-        filter_expr: Optional[Union[str, "Expression"]] = None,
-        limit: Optional[int] = None,
-        snapshot_id: Optional[int] = None,
-        as_of_timestamp: Optional[int] = None,
+        columns: list[str] | None = None,
+        filter_expr: Union[str, "Expression"] | None = None,
+        limit: int | None = None,
+        snapshot_id: int | None = None,
+        as_of_timestamp: int | None = None,
         filter: Optional["Expression"] = None,
-        filter_sql: Optional[str] = None,
+        filter_sql: str | None = None,
     ) -> pl.DataFrame:
         """
         Read data from a table.
@@ -656,8 +658,8 @@ class TableOperations:
         from pyiceberg.expressions import AlwaysTrue
 
         iceberg_filter = AlwaysTrue()
-        polars_filter_str: Optional[str] = None
-        polars_local_expr = None  # an IceFrame Expression that didn't push down
+        polars_filter_str: str | None = None
+        polars_local_expr: Any = None  # an IceFrame Expression that didn't push down
 
         if filter is not None and filter_expr is not None:
             raise ValidationError("Pass either `filter=` or `filter_expr=`, not both")
@@ -705,9 +707,7 @@ class TableOperations:
         if as_of_timestamp is not None and snapshot_id is None:
             snapshot_id = _resolve_snapshot_for_timestamp(table, as_of_timestamp)
             if snapshot_id is None:
-                raise ValidationError(
-                    f"No snapshot at or before timestamp {as_of_timestamp} (ms)"
-                )
+                raise ValidationError(f"No snapshot at or before timestamp {as_of_timestamp} (ms)")
 
         # Only push `limit` into the scan when there is no local filter to apply
         # afterwards. Otherwise the scan would cap rows BEFORE the local filter
@@ -723,7 +723,7 @@ class TableOperations:
         )
 
         arrow_table = scan.to_arrow()
-        df = pl.from_arrow(arrow_table)
+        df = from_arrow_dataframe(arrow_table)
 
         if polars_filter_str:
             df = df.filter(pl.sql_expr(polars_filter_str))
@@ -740,12 +740,12 @@ class TableOperations:
     def scan_batches(
         self,
         table_name: str,
-        columns: Optional[List[str]] = None,
-        filter_expr: Optional[Union[str, 'Expression']] = None,
-        limit: Optional[int] = None,
-        snapshot_id: Optional[int] = None,
-        as_of_timestamp: Optional[int] = None,
-        batch_size: Optional[int] = None,
+        columns: list[str] | None = None,
+        filter_expr: Union[str, "Expression"] | None = None,
+        limit: int | None = None,
+        snapshot_id: int | None = None,
+        as_of_timestamp: int | None = None,
+        batch_size: int | None = None,
     ):
         """
         Scan table and return an iterator of PyArrow RecordBatches.
@@ -789,9 +789,7 @@ class TableOperations:
         if as_of_timestamp is not None and snapshot_id is None:
             snapshot_id = _resolve_snapshot_for_timestamp(table, as_of_timestamp)
             if snapshot_id is None:
-                raise ValidationError(
-                    f"No snapshot at or before timestamp {as_of_timestamp} (ms)"
-                )
+                raise ValidationError(f"No snapshot at or before timestamp {as_of_timestamp} (ms)")
 
         scan = table.scan(
             row_filter=iceberg_filter,
@@ -802,13 +800,37 @@ class TableOperations:
 
         # Note: PyIceberg's to_arrow_batch_reader() returns a pa.RecordBatchReader
         # which is an iterator of RecordBatches
-        return scan.to_arrow_batch_reader()
+        reader = scan.to_arrow_batch_reader()
+        if not batch_size:
+            return reader
+
+        # PyIceberg currently controls its own batch size. Re-batch the stream
+        # so IceFrame's public contract is deterministic without materialising
+        # the entire table.
+        import pyarrow as pa
+
+        def _rebatch():
+            pending = []
+            pending_rows = 0
+            for batch in reader:
+                pending.append(batch)
+                pending_rows += batch.num_rows
+                table = pa.Table.from_batches(pending)
+                while pending_rows >= batch_size:
+                    yield table.slice(0, batch_size).combine_chunks().to_batches()[0]
+                    table = table.slice(batch_size)
+                    pending_rows -= batch_size
+                pending = table.to_batches() if pending_rows else []
+            if pending_rows:
+                yield pa.Table.from_batches(pending).combine_chunks().to_batches()[0]
+
+        return _rebatch()
 
     def append_to_table(
         self,
         table_name: str,
-        data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
-        branch: Optional[str] = None,
+        data: pl.DataFrame | pa.Table | dict[str, list],
+        branch: str | None = None,
     ) -> None:
         """
         Append data to a table.
@@ -828,8 +850,9 @@ class TableOperations:
             if branch:
                 # Check if append supports branch argument (newer PyIceberg)
                 import inspect
+
                 sig = inspect.signature(table.append)
-                if 'branch' in sig.parameters:
+                if "branch" in sig.parameters:
                     table.append(arrow_data, branch=branch)
                     invalidate_query_cache(table_name)
                     return
@@ -837,10 +860,7 @@ class TableOperations:
                 # Fallback: Use WAP properties if branch arg not supported
                 # This sets write.wap.enabled=true and write.wap.id=<branch>
                 with table.transaction() as txn:
-                    txn.set_properties({
-                        "write.wap.enabled": "true",
-                        "write.wap.id": branch
-                    })
+                    txn.set_properties({"write.wap.enabled": "true", "write.wap.id": branch})
                     txn.append(arrow_data)
                 invalidate_query_cache(table_name)
                 return
@@ -855,7 +875,7 @@ class TableOperations:
     def overwrite_table(
         self,
         table_name: str,
-        data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
+        data: pl.DataFrame | pa.Table | dict[str, list],
         overwrite_filter=None,
     ) -> None:
         """
@@ -889,11 +909,11 @@ class TableOperations:
     def upsert(
         self,
         table_name: str,
-        data: Union[pl.DataFrame, pa.Table, Dict[str, list]],
-        join_cols: Optional[List[str]] = None,
+        data: pl.DataFrame | pa.Table | dict[str, list],
+        join_cols: list[str] | None = None,
         when_matched_update_all: bool = True,
         when_not_matched_insert_all: bool = True,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Upsert (MERGE) rows into a table using PyIceberg's native
         ``Table.upsert``.
@@ -917,7 +937,7 @@ class TableOperations:
         table = self.get_table(table_name)
         arrow_data = to_arrow_table(data)
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "when_matched_update_all": when_matched_update_all,
             "when_not_matched_insert_all": when_not_matched_insert_all,
         }
@@ -947,7 +967,7 @@ class TableOperations:
         """Return PyIceberg's metadata-table inspector for a table."""
         return self.get_table(table_name).inspect
 
-    def delete_from_table(self, table_name: str, filter_expr: Union[str, Any]) -> None:
+    def delete_from_table(self, table_name: str, filter_expr: str | Any) -> None:
         """
         Delete rows from a table.
 
@@ -973,13 +993,12 @@ class TableOperations:
         table.delete(filter_expr)
         invalidate_query_cache(table_name)
 
-
     def drop_table(self, table_name: str) -> None:
         """Drop a table"""
         namespace, table = normalize_table_identifier(table_name)
         self.catalog.drop_table(f"{namespace}.{table}")
 
-    def list_tables(self, namespace: str = "default") -> List[str]:
+    def list_tables(self, namespace: str = "default") -> list[str]:
         """
         List all tables in a namespace.
 
@@ -994,6 +1013,7 @@ class TableOperations:
         confusingly empty response.
         """
         from pyiceberg.exceptions import NoSuchNamespaceError
+
         try:
             tables = self.catalog.list_tables(namespace)
         except NoSuchNamespaceError:
@@ -1007,6 +1027,7 @@ class TableOperations:
         up so they are visible to the caller.
         """
         from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
         try:
             self.get_table(table_name)
             return True

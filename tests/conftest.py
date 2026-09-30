@@ -165,28 +165,32 @@ def test_table_name():
 @pytest.fixture
 def sample_schema():
     """Sample PyArrow schema for testing."""
-    return pa.schema([
-        pa.field("id", pa.int64()),
-        pa.field("name", pa.string()),
-        pa.field("age", pa.int32()),
-        pa.field("created_at", pa.timestamp("us")),
-    ])
+    return pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("name", pa.string()),
+            pa.field("age", pa.int32()),
+            pa.field("created_at", pa.timestamp("us")),
+        ]
+    )
 
 
 @pytest.fixture
 def sample_data():
     """Sample data matching ``sample_schema``."""
-    return pl.DataFrame({
-        "id": [1, 2, 3, 4, 5],
-        "name": ["Alice", "Bob", "Charlie", "David", "Eve"],
-        "age": pl.Series([25, 30, 35, 40, 45], dtype=pl.Int32),
-        "created_at": pl.datetime_range(
-            start=pl.datetime(2024, 1, 1),
-            end=pl.datetime(2024, 1, 5),
-            interval="1d",
-            eager=True,
-        ),
-    })
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Alice", "Bob", "Charlie", "David", "Eve"],
+            "age": pl.Series([25, 30, 35, 40, 45], dtype=pl.Int32),
+            "created_at": pl.datetime_range(
+                start=pl.datetime(2024, 1, 1),
+                end=pl.datetime(2024, 1, 5),
+                interval="1d",
+                eager=True,
+            ),
+        }
+    )
 
 
 @pytest.fixture

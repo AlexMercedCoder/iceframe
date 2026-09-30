@@ -2,16 +2,18 @@
 DataFusion integration for IceFrame.
 """
 
-from typing import Optional
-
 import polars as pl
 import pyarrow as pa
 
+from iceframe.utils import from_arrow_dataframe
+
 try:
     import datafusion
+
     DATAFUSION_AVAILABLE = True
 except ImportError:
     DATAFUSION_AVAILABLE = False
+
 
 class DataFusionManager:
     """
@@ -26,12 +28,14 @@ class DataFusionManager:
             ice_frame: IceFrame instance
         """
         if not DATAFUSION_AVAILABLE:
-            raise ImportError("datafusion is required. Install with 'pip install iceframe[datafusion]'")
+            raise ImportError(
+                "datafusion is required. Install with 'pip install iceframe[datafusion]'"
+            )
 
         self.ice_frame = ice_frame
         self.ctx = datafusion.SessionContext()
 
-    def register_table(self, table_name: str, alias: Optional[str] = None):
+    def register_table(self, table_name: str, alias: str | None = None):
         """
         Register an Iceberg table with DataFusion.
 
@@ -63,4 +67,4 @@ class DataFusionManager:
         """
         df_result = self.ctx.sql(sql)
         # Convert DataFusion DataFrame to PyArrow Table then Polars
-        return pl.from_arrow(df_result.to_arrow_table())
+        return from_arrow_dataframe(df_result.to_arrow_table())

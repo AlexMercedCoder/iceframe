@@ -13,13 +13,15 @@ def mock_iceframe():
     ice._operations = MagicMock()
     return ice
 
+
 def test_visualizer_init():
-    with patch('iceframe.visualization.VIZ_AVAILABLE', True):
+    with patch("iceframe.visualization.VIZ_AVAILABLE", True):
         viz = Visualizer(MagicMock())
         assert viz.ice_frame is not None
 
+
 def test_visualizer_get_data(mock_iceframe):
-    with patch('iceframe.visualization.VIZ_AVAILABLE', True):
+    with patch("iceframe.visualization.VIZ_AVAILABLE", True):
         viz = Visualizer(mock_iceframe)
 
         # Mock scan_batches
@@ -32,10 +34,12 @@ def test_visualizer_get_data(mock_iceframe):
         assert df.height == 2
         mock_iceframe._operations.scan_batches.assert_called_once()
 
-def test_visualizer_plots(mock_iceframe):
-    with patch('iceframe.visualization.VIZ_AVAILABLE', True), \
-         patch('iceframe.visualization.alt') as mock_alt:
 
+def test_visualizer_plots(mock_iceframe):
+    with (
+        patch("iceframe.visualization.VIZ_AVAILABLE", True),
+        patch("iceframe.visualization.alt", create=True) as mock_alt,
+    ):
         viz = Visualizer(mock_iceframe)
 
         # Mock _get_data

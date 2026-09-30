@@ -20,6 +20,10 @@ export ICEBERG_CATALOG_TOKEN="your_token"
 export ICEBERG_WAREHOUSE="s3://bucket/warehouse"
 ```
 
+`ICEBERG_TOKEN` is the preferred spelling; `ICEBERG_CATALOG_TOKEN` remains a
+backwards-compatible alias. Commands return a nonzero status for configuration,
+catalog, permission, and read failures, making them safe to use in scripts.
+
 ## Commands
 
 ### List Tables

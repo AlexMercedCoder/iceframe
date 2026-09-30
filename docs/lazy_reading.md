@@ -13,7 +13,7 @@ from iceframe.memory import MemoryManager
 mem = MemoryManager(max_memory_mb=1024) # 1GB limit
 
 # Iterate over the table
-for chunk in mem.read_table_chunked(ice, "my_huge_table"):
+for chunk in mem.read_table_chunked(ice, "my_huge_table", chunk_size=10_000):
     # Process chunk (Polars DataFrame)
     print(chunk.head())
     
@@ -22,7 +22,10 @@ for chunk in mem.read_table_chunked(ice, "my_huge_table"):
 
 ## How it Works
 
-Unlike standard reading which loads the entire table into memory, lazy reading uses PyIceberg's batch reader to stream Arrow batches from storage. These batches are converted to Polars DataFrames on the fly, ensuring that only a small portion of the data is in memory at any given time.
+Unlike standard reading, batch reading streams Arrow batches from storage and
+re-batches them to the requested `chunk_size`. The separate `ice.lazy()` helper
+is only a lazy Polars plan over an already materialized Iceberg scan; use
+`scan_batches()` or `read_table_chunked()` for datasets larger than memory.
 
 ## Memory Safety
 

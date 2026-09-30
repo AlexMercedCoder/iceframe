@@ -23,8 +23,11 @@ ice.expire_snapshots("my_table", older_than_days=7, retain_last=1)
 Clean up data files that are no longer referenced by any snapshot (e.g., from failed writes).
 
 ```python
-# Remove orphan files older than 3 days
-ice.remove_orphan_files("my_table", older_than_days=3)
+# Plan first; nothing is deleted by default.
+candidates = ice.remove_orphan_files("my_table", older_than_days=3)
+
+# Apply only after reviewing the returned paths.
+deleted = ice.remove_orphan_files("my_table", older_than_days=3, dry_run=False)
 ```
 
 ## Compacting Data Files

@@ -2,8 +2,6 @@
 Namespace management for IceFrame.
 """
 
-from typing import Dict, List, Optional
-
 from pyiceberg.catalog import Catalog
 
 
@@ -15,7 +13,7 @@ class NamespaceManager:
     def __init__(self, catalog: Catalog):
         self.catalog = catalog
 
-    def create_namespace(self, name: str, properties: Optional[Dict[str, str]] = None) -> None:
+    def create_namespace(self, name: str, properties: dict[str, str] | None = None) -> None:
         """
         Create a new namespace.
 
@@ -34,7 +32,7 @@ class NamespaceManager:
         """
         self.catalog.drop_namespace(name)
 
-    def list_namespaces(self, parent: Optional[str] = None) -> List[tuple]:
+    def list_namespaces(self, parent: str | None = None) -> list[tuple]:
         """
         List namespaces.
 
@@ -46,7 +44,7 @@ class NamespaceManager:
         """
         return self.catalog.list_namespaces(parent or ())
 
-    def load_namespace_properties(self, name: str) -> Dict[str, str]:
+    def load_namespace_properties(self, name: str) -> dict[str, str]:
         """
         Load properties for a namespace.
 
@@ -58,7 +56,9 @@ class NamespaceManager:
         """
         return self.catalog.load_namespace_properties(name)
 
-    def update_namespace_properties(self, name: str, removals: Optional[set] = None, updates: Optional[Dict[str, str]] = None) -> None:
+    def update_namespace_properties(
+        self, name: str, removals: set | None = None, updates: dict[str, str] | None = None
+    ) -> None:
         """
         Update namespace properties.
 

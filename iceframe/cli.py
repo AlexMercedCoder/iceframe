@@ -3,6 +3,7 @@ Command Line Interface for IceFrame.
 """
 
 import os
+from typing import Any
 
 import typer
 from dotenv import load_dotenv
@@ -10,9 +11,11 @@ from rich.console import Console
 from rich.table import Table
 
 from iceframe.core import IceFrame
+from iceframe.utils import load_catalog_config_from_env
 
 app = typer.Typer(help="IceFrame CLI - Manage Iceberg tables from the command line.")
 console = Console()
+
 
 def get_ice_frame() -> IceFrame:
     """Initialize IceFrame from environment variables"""
@@ -24,30 +27,14 @@ def get_ice_frame() -> IceFrame:
         console.print("[red]Error: ICEBERG_CATALOG_URI environment variable not set.[/red]")
         raise typer.Exit(code=1)
 
-    config = {
-        "uri": uri,
-        "type": os.getenv("ICEBERG_CATALOG_TYPE", "rest"),
-    }
-
-    # Add optional config
-    if token := os.getenv("ICEBERG_CATALOG_TOKEN"):
-        config["token"] = token
-    if warehouse := os.getenv("ICEBERG_WAREHOUSE"):
-        config["warehouse"] = warehouse
-    if oauth_uri := os.getenv("ICEBERG_OAUTH2_SERVER_URI"):
-        config["oauth2-server-uri"] = oauth_uri
-
-    # Add any other ICEBERG_ header configs
-    for key, value in os.environ.items():
-        if key.startswith("ICEBERG_HEADER_"):
-            header_key = key.replace("ICEBERG_HEADER_", "header.").replace("_", "-")
-            config[header_key] = value
+    config = load_catalog_config_from_env()
 
     try:
         return IceFrame(config)
     except Exception as e:
         console.print(f"[red]Error initializing IceFrame: {e}[/red]")
         raise typer.Exit(code=1) from e
+
 
 @app.command()
 def list(namespace: str = typer.Option("default", help="Namespace to list tables from")):
@@ -68,6 +55,8 @@ def list(namespace: str = typer.Option("default", help="Namespace to list tables
         console.print(table)
     except Exception as e:
         console.print(f"[red]Error listing tables: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
 
 @app.command()
 def describe(table_name: str):
@@ -89,7 +78,7 @@ def describe(table_name: str):
                 str(field.field_id),
                 field.name,
                 str(field.field_type),
-                "Yes" if field.required else "No"
+                "Yes" if field.required else "No",
             )
         console.print(schema_table)
 
@@ -102,17 +91,19 @@ def describe(table_name: str):
             part_table.add_column("Transform")
             part_table.add_column("Source ID")
 
-            for field in table.spec().fields:
+            for partition_field in table.spec().fields:
                 part_table.add_row(
-                    str(field.field_id),
-                    field.name,
-                    str(field.transform),
-                    str(field.source_id)
+                    str(partition_field.field_id),
+                    partition_field.name,
+                    str(partition_field.transform),
+                    str(partition_field.source_id),
                 )
             console.print(part_table)
 
     except Exception as e:
         console.print(f"[red]Error describing table: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
 
 @app.command()
 def head(table_name: str, n: int = typer.Option(5, help="Number of rows to show")):
@@ -124,16 +115,20 @@ def head(table_name: str, n: int = typer.Option(5, help="Number of rows to show"
         console.print(df)
     except Exception as e:
         console.print(f"[red]Error reading table: {e}[/red]")
+        raise typer.Exit(code=1) from e
+
 
 # MCP Command Group
 mcp_app = typer.Typer(help="Manage MCP Server")
 app.add_typer(mcp_app, name="mcp")
+
 
 @mcp_app.command("start")
 def start_mcp():
     """Start the MCP server over stdio."""
     try:
         from iceframe.mcp_server import start
+
         start()
     except ImportError:
         console.print("[red]MCP dependencies not installed. Run: pip install 'iceframe[mcp]'[/red]")
@@ -141,6 +136,7 @@ def start_mcp():
     except Exception as e:
         console.print(f"[red]Error starting MCP server: {e}[/red]")
         raise typer.Exit(code=1) from e
+
 
 @mcp_app.command("config")
 def config_mcp():
@@ -151,7 +147,7 @@ def config_mcp():
     # Get python executable path
     python_path = sys.executable
 
-    config = {
+    config: dict[str, Any] = {
         "mcpServers": {
             "iceframe": {
                 "command": python_path,
@@ -162,8 +158,8 @@ def config_mcp():
                     "ICEBERG_WAREHOUSE": os.getenv("ICEBERG_WAREHOUSE", ""),
                     "ICEBERG_TOKEN": os.getenv("ICEBERG_TOKEN", ""),
                     "ICEBERG_CREDENTIAL": os.getenv("ICEBERG_CREDENTIAL", ""),
-                    "ICEBERG_OAUTH2_SERVER_URI": os.getenv("ICEBERG_OAUTH2_SERVER_URI", "")
-                }
+                    "ICEBERG_OAUTH2_SERVER_URI": os.getenv("ICEBERG_OAUTH2_SERVER_URI", ""),
+                },
             }
         }
     }
@@ -173,6 +169,7 @@ def config_mcp():
     config["mcpServers"]["iceframe"]["env"] = {k: v for k, v in env.items() if v}
 
     print(json.dumps(config, indent=2))
+
 
 if __name__ == "__main__":
     app()

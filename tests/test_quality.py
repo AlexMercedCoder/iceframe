@@ -11,23 +11,18 @@ def test_check_nulls():
     """Test checking for nulls"""
     validator = DataValidator()
 
-    df = pl.DataFrame({
-        "id": [1, 2, 3],
-        "name": ["A", "B", None]
-    })
+    df = pl.DataFrame({"id": [1, 2, 3], "name": ["A", "B", None]})
 
     assert validator.check_nulls(df, ["id"]) is True
     assert validator.check_nulls(df, ["name"]) is False
     assert validator.check_nulls(df, ["id", "name"]) is False
 
+
 def test_validate_constraints():
     """Test validating constraints"""
     validator = DataValidator()
 
-    df = pl.DataFrame({
-        "age": [20, 30, -5],
-        "status": ["active", "active", "deleted"]
-    })
+    df = pl.DataFrame({"age": [20, 30, -5], "status": ["active", "active", "deleted"]})
 
     # Check age > 0
     results = validator.validate(df, [pl.col("age") > 0])
@@ -39,16 +34,11 @@ def test_validate_constraints():
     assert results["passed"] is False
 
     # Check valid data
-    df_valid = pl.DataFrame({
-        "age": [20, 30],
-        "status": ["active", "active"]
-    })
-    results = validator.validate(df_valid, [
-        pl.col("age") > 0,
-        pl.col("status") == "active"
-    ])
+    df_valid = pl.DataFrame({"age": [20, 30], "status": ["active", "active"]})
+    results = validator.validate(df_valid, [pl.col("age") > 0, pl.col("status") == "active"])
     assert results["passed"] is True
     assert len(results["details"]) == 0
+
 
 def test_custom_check():
     """Test custom validation function"""

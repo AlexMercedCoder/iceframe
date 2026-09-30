@@ -5,7 +5,7 @@ Provides a fluent API for building and executing queries on Iceberg tables.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Literal
 
 import polars as pl
 from pyiceberg.expressions import AlwaysTrue
@@ -19,12 +19,14 @@ from iceframe.cache import (  # noqa: F401  (re-exported for backwards compatibi
 from iceframe.exceptions import ValidationError
 from iceframe.expressions import Column, Expression, plan_pushdown
 from iceframe.operations import TableOperations
+from iceframe.utils import from_arrow_dataframe
 
 logger = logging.getLogger(__name__)
 
 #: Join strategies accepted by :meth:`QueryBuilder.join`. ``"outer"`` is kept as
 #: a deprecated alias for Polars' modern ``"full"`` spelling.
 _JOIN_HOWS = ("inner", "left", "right", "full", "outer", "semi", "anti", "cross")
+JoinHow = Literal["inner", "left", "right", "full", "outer", "semi", "anti", "cross"]
 
 
 class QueryBuilder:
@@ -33,16 +35,16 @@ class QueryBuilder:
     def __init__(self, operations: TableOperations, table_name: str):
         self.operations = operations
         self.table_name = table_name
-        self._select_exprs = []
-        self._filter_exprs = []
-        self._group_by_exprs = []
-        self._order_by_exprs = []
-        self._limit = None
-        self._with_columns = []
-        self._joins = []  # List of (table_name, on, how) tuples
-        self._cache_ttl = None  # Cache TTL in seconds
+        self._select_exprs: list[Expression] = []
+        self._filter_exprs: list[Expression] = []
+        self._group_by_exprs: list[Expression] = []
+        self._order_by_exprs: list[Expression] = []
+        self._limit: int | None = None
+        self._with_columns: list[tuple[str, Expression]] = []
+        self._joins: list[tuple[str, str | list[str], JoinHow]] = []
+        self._cache_ttl: int | None = None
 
-    def select(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
+    def select(self, *exprs: str | Expression) -> "QueryBuilder":
         """Select columns or expressions"""
         for expr in exprs:
             if isinstance(expr, str):
@@ -51,21 +53,16 @@ class QueryBuilder:
                 self._select_exprs.append(expr)
         return self
 
-    def filter(self, expr: Expression) -> 'QueryBuilder':
+    def filter(self, expr: Expression) -> "QueryBuilder":
         """Filter rows (WHERE clause)"""
         self._filter_exprs.append(expr)
         return self
 
-    def where(self, expr: Expression) -> 'QueryBuilder':
+    def where(self, expr: Expression) -> "QueryBuilder":
         """Alias for filter"""
         return self.filter(expr)
 
-    def join(
-        self,
-        other_table: str,
-        on: Union[str, List[str]],
-        how: str = "inner"
-    ) -> 'QueryBuilder':
+    def join(self, other_table: str, on: str | list[str], how: JoinHow = "inner") -> "QueryBuilder":
         """
         Join with another table.
 
@@ -91,7 +88,7 @@ class QueryBuilder:
         self._joins.append((other_table, on, how))
         return self
 
-    def group_by(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
+    def group_by(self, *exprs: str | Expression) -> "QueryBuilder":
         """Group by columns or expressions"""
         for expr in exprs:
             if isinstance(expr, str):
@@ -100,7 +97,7 @@ class QueryBuilder:
                 self._group_by_exprs.append(expr)
         return self
 
-    def order_by(self, *exprs: Union[str, Expression]) -> 'QueryBuilder':
+    def order_by(self, *exprs: str | Expression) -> "QueryBuilder":
         """Order by columns or expressions"""
         for expr in exprs:
             if isinstance(expr, str):
@@ -109,17 +106,17 @@ class QueryBuilder:
                 self._order_by_exprs.append(expr)
         return self
 
-    def limit(self, n: int) -> 'QueryBuilder':
+    def limit(self, n: int) -> "QueryBuilder":
         """Limit number of rows"""
         self._limit = n
         return self
 
-    def with_column(self, name: str, expr: Expression) -> 'QueryBuilder':
+    def with_column(self, name: str, expr: Expression) -> "QueryBuilder":
         """Add or replace a column"""
         self._with_columns.append((name, expr))
         return self
 
-    def cache(self, ttl: Optional[int] = None) -> 'QueryBuilder':
+    def cache(self, ttl: int | None = None) -> "QueryBuilder":
         """
         Enable caching for this query.
 
@@ -132,7 +129,27 @@ class QueryBuilder:
         self._cache_ttl = ttl
         return self
 
-    def _cache_key_params(self, snapshot_id: Optional[int] = None) -> Dict[str, Any]:
+    def explain(self) -> dict[str, Any]:
+        """Return the physical Iceberg/Polars execution decisions without scanning data."""
+        table = self.operations.get_table(self.table_name)
+        plan = self._plan_scan(table)
+        residual = plan.pop("residual_filters")
+        return {
+            "table": self.table_name,
+            "iceberg": {
+                "predicate": repr(plan["row_filter"]),
+                "selected_fields": list(plan["selected_fields"]),
+                "limit": plan["limit"],
+            },
+            "polars": {
+                "residual_filters": [repr(expr) for expr in residual],
+                "joins_materialized_in_full": [name for name, _on, _how in self._joins],
+                "grouped_locally": bool(self._group_by_exprs),
+                "ordered_locally": bool(self._order_by_exprs),
+            },
+        }
+
+    def _cache_key_params(self, snapshot_id: int | None = None) -> dict[str, Any]:
         """
         Stable, JSON-serialisable signature of this query for the cache.
 
@@ -140,6 +157,7 @@ class QueryBuilder:
         so a write that produces a new snapshot can never be served a stale
         result even if invalidation is somehow missed.
         """
+
         def s(expr: Any) -> str:
             # __repr__ is deterministic for our small Expression tree; for
             # arbitrary user-supplied expressions we fall back to the type.
@@ -147,6 +165,7 @@ class QueryBuilder:
                 return repr(expr)
             except Exception:
                 return type(expr).__name__
+
         return {
             "select": [s(e) for e in self._select_exprs],
             "filters": [s(e) for e in self._filter_exprs],
@@ -158,7 +177,7 @@ class QueryBuilder:
             "snapshot_id": snapshot_id,
         }
 
-    def _required_columns(self) -> Optional[Set[str]]:
+    def _required_columns(self) -> set[str] | None:
         """
         The set of source-table columns this query actually needs, or ``None``
         when it can't be determined (which disables projection pushdown).
@@ -169,9 +188,9 @@ class QueryBuilder:
             # of the row from the result.
             return None
 
-        needed: Set[str] = set()
+        needed: set[str] = set()
 
-        groups: List[Any] = list(self._select_exprs)
+        groups: list[Any] = list(self._select_exprs)
         groups += self._filter_exprs
         groups += self._group_by_exprs
         groups += self._order_by_exprs
@@ -197,7 +216,7 @@ class QueryBuilder:
 
         return needed
 
-    def _plan_scan(self, table) -> Dict[str, Any]:
+    def _plan_scan(self, table) -> dict[str, Any]:
         """
         Build the kwargs for ``table.scan()``, deciding what can be pushed.
 
@@ -208,7 +227,7 @@ class QueryBuilder:
         row_filter, residual = plan_pushdown(self._filter_exprs)
 
         # Projection pushdown: only when every expression's column set is known.
-        selected_fields = ("*",)
+        selected_fields: tuple[str, ...] = ("*",)
         required = self._required_columns()
         if required is not None:
             table_cols = {f.name for f in table.schema().fields}
@@ -229,7 +248,7 @@ class QueryBuilder:
         # Limit pushdown: only sound when the limit is the last thing that
         # happens. Any residual filter, join, aggregation, ordering or
         # projection that reorders/drops rows invalidates an early cap.
-        scan_limit = None
+        scan_limit: int | None = None
         if (
             self._limit is not None
             and not residual
@@ -270,20 +289,23 @@ class QueryBuilder:
         # 2. Read from Iceberg
         scan = table.scan(**plan)
         arrow_table = scan.to_arrow()
-        df = pl.from_arrow(arrow_table)
+        df = from_arrow_dataframe(arrow_table)
 
         # 3. Handle Joins
         if self._joins:
+            logger.warning(
+                "Query joins materialize each joined table locally; inspect explain() "
+                "and use an external distributed engine for large joins"
+            )
             for join_table_name, on, how in self._joins:
                 # Read the join table
                 join_table = self.operations.get_table(join_table_name)
                 join_scan = join_table.scan()
                 join_arrow = join_scan.to_arrow()
-                join_df = pl.from_arrow(join_arrow)
+                join_df = from_arrow_dataframe(join_arrow)
 
                 # Perform join
                 df = df.join(join_df, on=on, how=how)
-
 
         # 4. Polars Post-processing
 
@@ -342,12 +364,13 @@ class QueryBuilder:
             df = df.head(self._limit)
 
         if cache_enabled:
+            assert cache_params is not None
             get_query_cache().put(self.table_name, cache_params, df, ttl=self._cache_ttl)
         return df
 
     # Write Operations
 
-    def insert(self, data: Union[pl.DataFrame, Dict[str, List[Any]]]) -> None:
+    def insert(self, data: pl.DataFrame | dict[str, list[Any]]) -> None:
         """Insert data into the table"""
         self.operations.append_to_table(self.table_name, data)
         invalidate_query_cache(self.table_name)
@@ -376,7 +399,7 @@ class QueryBuilder:
         table.delete(combined_filter)
         invalidate_query_cache(self.table_name)
 
-    def update(self, updates: Dict[str, Any]) -> None:
+    def update(self, updates: dict[str, Any]) -> None:
         """
         Update rows matching the filter, in place, via copy-on-write.
 
@@ -401,6 +424,7 @@ class QueryBuilder:
         for expr in self._filter_exprs:
             condition = expr.to_polars()
             mask = condition if mask is None else (mask & condition)
+        assert mask is not None
 
         ice_filter, residual = plan_pushdown(self._filter_exprs)
 
@@ -430,7 +454,7 @@ class QueryBuilder:
             row_filter=ice_filter,
             selected_fields=tuple(source_col_names),
         )
-        affected_df = pl.from_arrow(affected_scan.to_arrow())
+        affected_df = from_arrow_dataframe(affected_scan.to_arrow())
 
         if residual and affected_df.height:
             # The pushed filter is a superset; we can't narrow the partition
@@ -446,17 +470,16 @@ class QueryBuilder:
             return  # nothing matched
 
         distinct_partitions = affected_df.unique()
-        logger.info(
-            "Updating %d partition(s) of %s", distinct_partitions.height, self.table_name
-        )
+        logger.info("Updating %d partition(s) of %s", distinct_partitions.height, self.table_name)
 
-        from pyiceberg.expressions import And, EqualTo, IsNull, Or
+        from pyiceberg.expressions import And, EqualTo, IsNull, Or, Reference
 
         def _eq_or_isnull(col_name: str, val: Any):
             # Iceberg has no EqualTo(col, None); use IsNull for null values.
-            return IsNull(col_name) if val is None else EqualTo(col_name, val)
+            term = Reference(col_name)
+            return IsNull(term=term) if val is None else EqualTo(term=term, value=val)
 
-        def _partition_filter(row: Dict[str, Any]):
+        def _partition_filter(row: dict[str, Any]):
             part_filter = None
             for col_name, val in row.items():
                 pred = _eq_or_isnull(col_name, val)
@@ -467,14 +490,14 @@ class QueryBuilder:
 
         # Read every affected partition, apply the update, and commit them all
         # at once.
-        all_partitions_filter = None
+        all_partitions_filter: Any = None
         for row in rows:
             pf = _partition_filter(row)
-            all_partitions_filter = pf if all_partitions_filter is None else Or(
-                all_partitions_filter, pf
+            all_partitions_filter = (
+                pf if all_partitions_filter is None else Or(all_partitions_filter, pf)
             )
 
-        part_df = pl.from_arrow(table.scan(row_filter=all_partitions_filter).to_arrow())
+        part_df = from_arrow_dataframe(table.scan(row_filter=all_partitions_filter).to_arrow())
         updated_df = part_df.with_columns(update_exprs)
 
         try:
@@ -492,14 +515,18 @@ class QueryBuilder:
             for row in rows:
                 pf = _partition_filter(row)
                 part_arrow = table.scan(row_filter=pf).to_arrow()
-                one_df = pl.from_arrow(part_arrow).with_columns(update_exprs)
+                one_df = from_arrow_dataframe(part_arrow).with_columns(update_exprs)
                 table.overwrite(one_df.to_arrow(), overwrite_filter=pf)
 
         invalidate_query_cache(self.table_name)
 
-    def merge(self, source_data: pl.DataFrame, on: str,
-              when_matched_update: Optional[Dict[str, Any]] = None,
-              when_not_matched_insert: Optional[Dict[str, Any]] = None) -> None:
+    def merge(
+        self,
+        source_data: pl.DataFrame,
+        on: str,
+        when_matched_update: dict[str, Any] | None = None,
+        when_not_matched_insert: dict[str, Any] | None = None,
+    ) -> None:
         """
         Merge source data into the target table (upsert) using Copy-on-Write.
 
@@ -549,6 +576,11 @@ class QueryBuilder:
                 )
 
         target_df = self.operations.read_table(self.table_name)
+        logger.warning(
+            "Column-level merge materializes and overwrites the full target table %s; "
+            "prefer IceFrame.upsert() when possible",
+            self.table_name,
+        )
         target_schema = target_df.schema
         target_cols = target_df.columns
 
@@ -599,9 +631,7 @@ class QueryBuilder:
                         projected[tgt_col] = src_value
                     else:
                         projected[tgt_col] = pl.lit(src_value)
-                df_insert = new_rows.with_columns(
-                    [v.alias(k) for k, v in projected.items()]
-                )
+                df_insert = new_rows.with_columns([v.alias(k) for k, v in projected.items()])
             else:
                 df_insert = new_rows
         else:
@@ -615,9 +645,9 @@ class QueryBuilder:
             missing = [c for c in target_cols if c not in df.columns]
             out = df
             if missing:
-                out = out.with_columns([
-                    pl.lit(None).cast(target_schema[c]).alias(c) for c in missing
-                ])
+                out = out.with_columns(
+                    [pl.lit(None).cast(target_schema[c]).alias(c) for c in missing]
+                )
             return out.select(target_cols)
 
         final_df = pl.concat(

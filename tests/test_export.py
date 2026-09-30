@@ -89,7 +89,9 @@ def test_export_to_json(ice_frame, test_table_name, sample_schema, sample_data, 
             os.remove(output_path)
 
 
-def test_export_with_column_selection(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
+def test_export_with_column_selection(
+    ice_frame, test_table_name, sample_schema, sample_data, cleanup_table
+):
     """Test exporting specific columns"""
     cleanup_table(test_table_name)
 

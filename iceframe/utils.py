@@ -3,12 +3,19 @@ Utility functions for IceFrame library
 """
 
 import os
-from typing import Any, Dict
+from typing import Any
 
+import polars as pl
 from dotenv import load_dotenv
 
 
-def load_catalog_config_from_env() -> Dict[str, Any]:
+def from_arrow_dataframe(data: Any) -> pl.DataFrame:
+    """Convert Arrow-compatible data to a DataFrame, never a Series."""
+    result = pl.from_arrow(data)
+    return result.to_frame() if isinstance(result, pl.Series) else result
+
+
+def load_catalog_config_from_env() -> dict[str, Any]:
     """
     Load catalog configuration from environment variables.
 
@@ -24,7 +31,7 @@ def load_catalog_config_from_env() -> Dict[str, Any]:
     }
 
     # Add token if present
-    token = os.getenv("ICEBERG_TOKEN")
+    token = os.getenv("ICEBERG_TOKEN") or os.getenv("ICEBERG_CATALOG_TOKEN")
     if token:
         config["token"] = token
 
@@ -33,15 +40,24 @@ def load_catalog_config_from_env() -> Dict[str, Any]:
     if oauth2_uri:
         config["oauth2-server-uri"] = oauth2_uri
 
+    credential = os.getenv("ICEBERG_CREDENTIAL")
+    if credential:
+        config["credential"] = credential
+
     # Add credential vending if enabled
     credential_vending = os.getenv("ICEBERG_CREDENTIAL_VENDING")
     if credential_vending:
         config["header.X-Iceberg-Access-Delegation"] = credential_vending
 
+    for key, value in os.environ.items():
+        if key.startswith("ICEBERG_HEADER_"):
+            header = key.removeprefix("ICEBERG_HEADER_").replace("_", "-")
+            config[f"header.{header}"] = value
+
     return config
 
 
-def validate_catalog_config(config: Dict[str, Any]) -> None:
+def validate_catalog_config(config: dict[str, Any]) -> None:
     """
     Validate catalog configuration.
 
@@ -115,7 +131,7 @@ def format_table_identifier(namespace: str, table_name: str) -> str:
     return f"{namespace}.{table_name}"
 
 
-def safe_summary_dict(summary: Any) -> Dict[str, Any]:
+def safe_summary_dict(summary: Any) -> dict[str, Any]:
     """
     Safely convert a PyIceberg Summary object to a plain dict.
 
@@ -138,13 +154,13 @@ def safe_summary_dict(summary: Any) -> Dict[str, Any]:
     # Try Pydantic v2 model_dump first (most reliable)
     if hasattr(summary, "model_dump"):
         try:
-            return summary.model_dump()
+            return dict(summary.model_dump())
         except Exception:
             pass
 
     # Fallback: manually reconstruct from known attributes
     if hasattr(summary, "operation") and hasattr(summary, "additional_properties"):
-        result: Dict[str, Any] = {"operation": str(summary.operation.value)}
+        result: dict[str, Any] = {"operation": str(summary.operation.value)}
         result.update(summary.additional_properties)
         return result
 

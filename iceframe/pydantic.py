@@ -4,7 +4,7 @@ Pydantic integration for IceFrame.
 Provides utilities to convert Pydantic models to Iceberg schemas and records.
 """
 
-from typing import Any, Dict, List, Type, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pyiceberg.schema import Schema
@@ -22,7 +22,7 @@ from pyiceberg.types import (
 )
 
 
-def to_iceberg_schema(model: Type[BaseModel]) -> Schema:
+def to_iceberg_schema(model: type[BaseModel]) -> Schema:
     """
     Convert a Pydantic model to a PyIceberg Schema.
 
@@ -42,17 +42,13 @@ def to_iceberg_schema(model: Type[BaseModel]) -> Schema:
         iceberg_type = _python_type_to_iceberg(annotation)
 
         fields.append(
-            NestedField(
-                field_id=i + 1,
-                name=name,
-                field_type=iceberg_type,
-                required=required
-            )
+            NestedField(field_id=i + 1, name=name, field_type=iceberg_type, required=required)
         )
 
     return Schema(*fields)
 
-def _python_type_to_iceberg(py_type: Type) -> IcebergType:
+
+def _python_type_to_iceberg(py_type: Any) -> IcebergType:
     """Convert Python type to Iceberg type"""
     origin = get_origin(py_type)
     args = get_args(py_type)
@@ -70,19 +66,19 @@ def _python_type_to_iceberg(py_type: Type) -> IcebergType:
     if py_type is str:
         return StringType()
     elif py_type is int:
-        return LongType() # Default to Long for safety
+        return LongType()  # Default to Long for safety
     elif py_type is float:
         return DoubleType()
     elif py_type is bool:
         return BooleanType()
 
     # Handle Lists
-    if origin is list or origin is List:
+    if origin is list or origin is list:
         element_type = args[0] if args else str
         return ListType(
-            element_id=0, # ID will be assigned by schema creation? No, need to be careful
+            element_id=0,  # ID will be assigned by schema creation? No, need to be careful
             element=_python_type_to_iceberg(element_type),
-            element_required=False # Assume elements can be null?
+            element_required=False,  # Assume elements can be null?
         )
 
     # Handle nested Pydantic models
@@ -91,16 +87,17 @@ def _python_type_to_iceberg(py_type: Type) -> IcebergType:
         for i, (name, field_info) in enumerate(py_type.model_fields.items()):
             fields.append(
                 NestedField(
-                    field_id=i + 1, # Nested IDs need management
+                    field_id=i + 1,  # Nested IDs need management
                     name=name,
                     field_type=_python_type_to_iceberg(field_info.annotation),
-                    required=field_info.is_required()
+                    required=field_info.is_required(),
                 )
             )
         return StructType(*fields)
 
     # Date/Time handling requires more specific types (datetime.date, datetime.datetime)
     from datetime import date, datetime
+
     if py_type is datetime:
         return TimestampType()
     if py_type is date:
@@ -109,9 +106,10 @@ def _python_type_to_iceberg(py_type: Type) -> IcebergType:
     # Default fallback
     return StringType()
 
-class PydanticMixin:
+
+class PydanticMixin(BaseModel):
     """Mixin for Pydantic models to add Iceberg functionality"""
 
-    def to_iceberg_record(self) -> Dict[str, Any]:
+    def to_iceberg_record(self) -> dict[str, Any]:
         """Convert model instance to dictionary suitable for Iceberg insertion"""
-        return self.model_dump()
+        return dict(self.model_dump())

@@ -17,7 +17,9 @@ def test_add_drop_partition(ice_frame, test_table_name, sample_schema, cleanup_t
     assert table.spec().fields[0].name == "name"
 
     # Add partition by 'created_at' (day)
-    ice_frame.partition_by(test_table_name).add_partition_field("created_at", "day", name="created_day")
+    ice_frame.partition_by(test_table_name).add_partition_field(
+        "created_at", "day", name="created_day"
+    )
 
     # Verify
     table = ice_frame.get_table(test_table_name)
@@ -35,13 +37,16 @@ def test_add_drop_partition(ice_frame, test_table_name, sample_schema, cleanup_t
     assert len(table.spec().fields) == 1
     assert table.spec().fields[0].name == "created_day"
 
+
 def test_bucket_partition(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test bucket partition"""
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
 
     # Add bucket partition on 'id'
-    ice_frame.partition_by(test_table_name).add_partition_field("id", "bucket", 16, name="id_bucket")
+    ice_frame.partition_by(test_table_name).add_partition_field(
+        "id", "bucket", 16, name="id_bucket"
+    )
 
     # Verify
     table = ice_frame.get_table(test_table_name)

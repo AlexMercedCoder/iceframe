@@ -27,27 +27,32 @@ def ice(tmp_path):
     """A fresh IceFrame backed by a tmp_path SQLite catalog."""
     warehouse = tmp_path / "warehouse"
     warehouse.mkdir()
-    frame = IceFrame({
-        "uri": f"sqlite:///{tmp_path / 'catalog.db'}",
-        "type": "sql",
-        "warehouse": f"file://{warehouse}",
-    })
+    frame = IceFrame(
+        {
+            "uri": f"sqlite:///{tmp_path / 'catalog.db'}",
+            "type": "sql",
+            "warehouse": f"file://{warehouse}",
+        }
+    )
     frame.create_namespace("default")
     return frame
 
 
 @pytest.fixture
 def six_rows():
-    return pl.DataFrame({
-        "id": [1, 2, 3, 4, 5, 6],
-        "g": ["a", "a", "b", "b", "c", "c"],
-        "v": [10, 20, 30, 40, 50, 60],
-    })
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "g": ["a", "a", "b", "b", "c", "c"],
+            "v": [10, 20, 30, 40, 50, 60],
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # 0.1 — filtered compaction destroyed every non-matching row
 # ---------------------------------------------------------------------------
+
 
 def test_filtered_compaction_preserves_non_matching_rows(ice, six_rows):
     """
@@ -147,6 +152,7 @@ def test_compaction_honours_target_file_size(ice, six_rows):
 # 0.2 — AND silently dropped unpushable operands
 # ---------------------------------------------------------------------------
 
+
 def test_and_with_unpushable_operand_is_applied_fully(ice, six_rows):
     """
     Roadmap finding 2. ``And(AlwaysTrue(), X)`` simplifies to ``X``, so the
@@ -238,6 +244,7 @@ def test_delete_refuses_partially_pushed_filter(ice, six_rows):
 # 0.3 — expire_snapshots called a nonexistent PyIceberg API
 # ---------------------------------------------------------------------------
 
+
 def test_expire_snapshots_actually_expires(ice, six_rows):
     """
     Roadmap finding 3. ``gc.py`` called ``Table.expire_snapshots(...)``, which
@@ -298,6 +305,7 @@ def test_expire_snapshots_rejects_negative_retain(ice, six_rows):
 # 0.5 — create_table(sort_order=[...]) raised AttributeError
 # ---------------------------------------------------------------------------
 
+
 def test_create_table_with_list_sort_order(ice, six_rows):
     """
     Roadmap finding 4. The conversion block was a literal ``pass`` and the raw
@@ -350,6 +358,7 @@ def test_compaction_applies_sort_order(ice, six_rows):
 # ---------------------------------------------------------------------------
 # 0.4 — null rows passed every DataValidator constraint
 # ---------------------------------------------------------------------------
+
 
 def test_null_rows_fail_constraints():
     """
@@ -420,6 +429,7 @@ def test_clean_data_still_passes():
 # 0.6 — query cache served stale data after writes
 # ---------------------------------------------------------------------------
 
+
 def test_cache_invalidated_after_append(ice, six_rows):
     """
     Roadmap finding 6. ``QueryCache.invalidate(table)`` existed and was
@@ -478,6 +488,7 @@ def test_cache_key_includes_snapshot_id(ice, six_rows):
 # ---------------------------------------------------------------------------
 # 0.7 — silent-failure excepts
 # ---------------------------------------------------------------------------
+
 
 def test_mor_delete_where_propagates_failures(ice, six_rows):
     """``MoRWriter.delete_where`` caught every exception and passed."""
@@ -552,6 +563,7 @@ def test_no_prints_in_library_code():
 # 2.3 — QueryBuilder pushed neither projection nor limit
 # ---------------------------------------------------------------------------
 
+
 def test_projection_is_pushed_into_the_scan(ice, six_rows):
     table = "default.projection_pushdown"
     ice.create_table(table, six_rows)
@@ -613,15 +625,14 @@ def test_limit_not_pushed_with_residual_filter(ice, six_rows):
 # 2.1 / 2.2 — native upsert and transactions
 # ---------------------------------------------------------------------------
 
+
 def test_upsert_updates_and_inserts(ice):
     table = "default.upsert_target"
     base = pl.DataFrame({"id": [1, 2, 3], "v": [10, 20, 30]})
     ice.create_table(table, base)
     ice.append_to_table(table, base)
 
-    result = ice.upsert(
-        table, pl.DataFrame({"id": [2, 4], "v": [999, 40]}), join_cols=["id"]
-    )
+    result = ice.upsert(table, pl.DataFrame({"id": [2, 4], "v": [999, 40]}), join_cols=["id"])
 
     after = ice.read_table(table).sort("id")
     assert after["id"].to_list() == [1, 2, 3, 4]
@@ -649,6 +660,7 @@ def test_transaction_commits_atomically(ice, six_rows):
 # ---------------------------------------------------------------------------
 # 2.4 — metadata tables
 # ---------------------------------------------------------------------------
+
 
 def test_inspect_metadata_tables(ice, six_rows):
     table = "default.inspect_me"
@@ -679,6 +691,7 @@ def test_count_rows_uses_metadata(ice, six_rows):
 # ---------------------------------------------------------------------------
 # 2.7 — orphan-file safety
 # ---------------------------------------------------------------------------
+
 
 def test_remove_orphan_files_defaults_to_dry_run(ice, six_rows):
     import os
@@ -716,6 +729,7 @@ def test_orphan_cleanup_preserves_live_data(ice, six_rows):
 # 3.2 — schema type coverage
 # ---------------------------------------------------------------------------
 
+
 def test_dict_schema_maps_extended_types(ice):
     from pyiceberg.types import (
         BinaryType,
@@ -726,13 +740,16 @@ def test_dict_schema_maps_extended_types(ice):
     )
 
     table = "default.typed_schema"
-    ice.create_table(table, {
-        "a": "int32",
-        "b": "decimal(10, 2)",
-        "c": "binary",
-        "d": "uuid",
-        "e": "time",
-    })
+    ice.create_table(
+        table,
+        {
+            "a": "int32",
+            "b": "decimal(10, 2)",
+            "c": "binary",
+            "d": "uuid",
+            "e": "time",
+        },
+    )
 
     fields = {f.name: f.field_type for f in ice.get_table(table).schema().fields}
     assert isinstance(fields["a"], IntegerType)
@@ -745,10 +762,13 @@ def test_dict_schema_maps_extended_types(ice):
 
 def test_dict_schema_supports_required_fields(ice):
     table = "default.required_schema"
-    ice.create_table(table, {
-        "id": {"type": "long", "required": True},
-        "name": "string",
-    })
+    ice.create_table(
+        table,
+        {
+            "id": {"type": "long", "required": True},
+            "name": "string",
+        },
+    )
 
     fields = {f.name: f for f in ice.get_table(table).schema().fields}
     assert fields["id"].required is True
@@ -758,11 +778,13 @@ def test_dict_schema_supports_required_fields(ice):
 def test_pyarrow_nested_types_round_trip(ice):
     from pyiceberg.types import ListType, StructType
 
-    schema = pa.schema([
-        pa.field("id", pa.int64()),
-        pa.field("tags", pa.list_(pa.string())),
-        pa.field("meta", pa.struct([pa.field("k", pa.string()), pa.field("n", pa.int64())])),
-    ])
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("tags", pa.list_(pa.string())),
+            pa.field("meta", pa.struct([pa.field("k", pa.string()), pa.field("n", pa.int64())])),
+        ]
+    )
 
     table = "default.nested_schema"
     ice.create_table(table, schema)
@@ -777,10 +799,15 @@ def test_decimal_round_trips_through_a_write(ice):
 
     table = "default.decimal_write"
     ice.create_table(table, {"id": "long", "amount": "decimal(10, 2)"})
-    ice.append_to_table(table, pa.table({
-        "id": pa.array([1, 2], pa.int64()),
-        "amount": pa.array([Decimal("1.25"), Decimal("9.99")], pa.decimal128(10, 2)),
-    }))
+    ice.append_to_table(
+        table,
+        pa.table(
+            {
+                "id": pa.array([1, 2], pa.int64()),
+                "amount": pa.array([Decimal("1.25"), Decimal("9.99")], pa.decimal128(10, 2)),
+            }
+        ),
+    )
 
     assert ice.read_table(table).height == 2
 
@@ -788,6 +815,7 @@ def test_decimal_round_trips_through_a_write(ice):
 # ---------------------------------------------------------------------------
 # 3.3 — window functions ignored ORDER BY
 # ---------------------------------------------------------------------------
+
 
 def test_row_number_honours_order_by():
     """``RowNumber.to_polars`` had an ``if order_exprs:`` branch whose body was
@@ -872,6 +900,7 @@ def test_aggregates_are_not_pushable():
 # ---------------------------------------------------------------------------
 # Ergonomics / API completeness
 # ---------------------------------------------------------------------------
+
 
 def test_join_accepts_full_and_maps_outer(ice, six_rows):
     """Polars >= 1.0 renamed "outer" to "full"; only the deprecated spelling

@@ -11,10 +11,13 @@ These variables configure the connection to your Iceberg catalog.
 | `ICEBERG_CATALOG_URI` | The URI of your Iceberg catalog (e.g., `https://catalog.dremio.cloud/api/iceberg`). | Yes | - |
 | `ICEBERG_CATALOG_TYPE` | The type of catalog to use. | No | `rest` |
 | `ICEBERG_WAREHOUSE` | The warehouse location (e.g., `s3://my-bucket/warehouse`). | No | - |
-| `ICEBERG_TOKEN` | Bearer token for authentication (alias: `ICEBERG_CATALOG_TOKEN`). | No | - |
+| `ICEBERG_TOKEN` | Bearer token for authentication. | No | - |
+| `ICEBERG_CATALOG_TOKEN` | Backwards-compatible alias used only when `ICEBERG_TOKEN` is unset. | No | - |
 | `ICEBERG_OAUTH2_SERVER_URI` | URI for the OAuth2 server if using OAuth. | No | - |
 | `ICEBERG_CREDENTIAL` | Credential for catalog authentication (used in MCP). | No | - |
 | `ICEBERG_CREDENTIAL_VENDING` | Value for `X-Iceberg-Access-Delegation` header if using credential vending. | No | - |
+| `ICEFRAME_MCP_MAX_ROWS` | MCP response row cap. | No | `1000` |
+| `ICEFRAME_MCP_MAX_BYTES` | MCP complete serialized-response byte cap. | No | `5242880` |
 
 ### Custom Headers
 

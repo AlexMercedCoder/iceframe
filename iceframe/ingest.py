@@ -6,13 +6,17 @@ which can then be used to create Iceberg tables.
 """
 
 import logging
-from typing import Any, Optional
+from collections.abc import Callable
+from typing import Any, cast
 
 import polars as pl
 
+from iceframe.utils import from_arrow_dataframe
+
 logger = logging.getLogger(__name__)
 
-def read_delta(path: str, version: Optional[int] = None, **kwargs) -> pl.DataFrame:
+
+def read_delta(path: str, version: int | None = None, **kwargs) -> pl.DataFrame:
     """
     Read a Delta Lake table into a Polars DataFrame.
 
@@ -27,7 +31,10 @@ def read_delta(path: str, version: Optional[int] = None, **kwargs) -> pl.DataFra
     try:
         return pl.read_delta(path, version=version, **kwargs)
     except ImportError:
-        raise ImportError("deltalake is required. Install with 'pip install iceframe[delta]'") from None
+        raise ImportError(
+            "deltalake is required. Install with 'pip install iceframe[delta]'"
+        ) from None
+
 
 def read_lance(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -42,11 +49,15 @@ def read_lance(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import lance
+
         ds = lance.dataset(path, **kwargs)
         # Convert to Arrow Table then Polars
-        return pl.from_arrow(ds.to_table())
+        return from_arrow_dataframe(ds.to_table())
     except ImportError:
-        raise ImportError("pylance is required. Install with 'pip install iceframe[lance]'") from None
+        raise ImportError(
+            "pylance is required. Install with 'pip install iceframe[lance]'"
+        ) from None
+
 
 def read_vortex(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -69,21 +80,21 @@ def read_vortex(path: str, **kwargs) -> pl.DataFrame:
         # Based on research: vortex.open("example.vortex").scan().read_all()
         # We need to verify what read_all() returns. It likely returns a Vortex Array which might support to_arrow()
 
-        vortex_array = vortex.open(path).scan().read_all()
+        vortex_array: Any = vortex.open(path).scan().read_all()
 
         # Check if it has to_arrow() or similar
         if hasattr(vortex_array, "to_arrow"):
-            return pl.from_arrow(vortex_array.to_arrow())
+            return from_arrow_dataframe(vortex_array.to_arrow())
         else:
-            # Fallback or error if we can't convert
-            # Maybe it returns a PyArrow table directly?
-            # Let's assume it supports Arrow conversion as it's a columnar format
-            return pl.from_arrow(vortex_array.to_arrow())
+            raise TypeError("Vortex result does not expose to_arrow()")
 
     except ImportError:
-        raise ImportError("vortex-data is required. Install with 'pip install iceframe[vortex]'") from None
+        raise ImportError(
+            "vortex-data is required. Install with 'pip install iceframe[vortex]'"
+        ) from None
     except Exception as e:
         raise ValueError(f"Failed to read Vortex file: {e}") from e
+
 
 def read_excel(path: str, sheet_name: str = "Sheet1", **kwargs) -> pl.DataFrame:
     """
@@ -98,11 +109,16 @@ def read_excel(path: str, sheet_name: str = "Sheet1", **kwargs) -> pl.DataFrame:
         Polars DataFrame
     """
     try:
-        return pl.read_excel(path, sheet_name=sheet_name, **kwargs)
+        return cast(pl.DataFrame, pl.read_excel(path, sheet_name=sheet_name, **kwargs))
     except ImportError:
-        raise ImportError("fastexcel is required. Install with 'pip install iceframe[excel]'") from None
+        raise ImportError(
+            "fastexcel is required. Install with 'pip install iceframe[excel]'"
+        ) from None
 
-def read_gsheets(url: str, credentials: Any = None, sheet_name: Optional[str] = None, **kwargs) -> pl.DataFrame:
+
+def read_gsheets(
+    url: str, credentials: Any = None, sheet_name: str | None = None, **kwargs
+) -> pl.DataFrame:
     """
     Read a Google Sheet into a Polars DataFrame.
 
@@ -125,7 +141,7 @@ def read_gsheets(url: str, credentials: Any = None, sheet_name: Optional[str] = 
         else:
             # Try default auth? Or raise error?
             # gspread usually requires explicit auth or config file
-            gc = gspread.service_account() # Looks for default config
+            gc = gspread.service_account()  # Looks for default config
 
         sh = gc.open_by_url(url)
 
@@ -140,7 +156,10 @@ def read_gsheets(url: str, credentials: Any = None, sheet_name: Optional[str] = 
         return pl.DataFrame(data)
 
     except ImportError:
-        raise ImportError("gspread is required. Install with 'pip install iceframe[gsheets]'") from None
+        raise ImportError(
+            "gspread is required. Install with 'pip install iceframe[gsheets]'"
+        ) from None
+
 
 def read_hudi(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -155,11 +174,15 @@ def read_hudi(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import daft
+
         df = daft.read_hudi(path, **kwargs)
         # Convert Daft DataFrame to Arrow then Polars
-        return pl.from_arrow(df.to_arrow())
+        return from_arrow_dataframe(df.to_arrow())
     except ImportError:
-        raise ImportError("getdaft is required. Install with 'pip install iceframe[hudi]'") from None
+        raise ImportError(
+            "getdaft is required. Install with 'pip install iceframe[hudi]'"
+        ) from None
+
 
 def read_csv(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -173,6 +196,7 @@ def read_csv(path: str, **kwargs) -> pl.DataFrame:
         Polars DataFrame
     """
     return pl.read_csv(path, **kwargs)
+
 
 def read_json(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -196,6 +220,7 @@ def read_ndjson(path: str, **kwargs) -> pl.DataFrame:
     """
     return pl.read_ndjson(path, **kwargs)
 
+
 def read_parquet(path: str, **kwargs) -> pl.DataFrame:
     """
     Read a Parquet file into a Polars DataFrame.
@@ -208,6 +233,7 @@ def read_parquet(path: str, **kwargs) -> pl.DataFrame:
         Polars DataFrame
     """
     return pl.read_parquet(path, **kwargs)
+
 
 def read_ipc(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -222,6 +248,7 @@ def read_ipc(path: str, **kwargs) -> pl.DataFrame:
     """
     return pl.read_ipc(path, **kwargs)
 
+
 def read_avro(path: str, **kwargs) -> pl.DataFrame:
     """
     Read an Avro file into a Polars DataFrame.
@@ -235,18 +262,24 @@ def read_avro(path: str, **kwargs) -> pl.DataFrame:
     """
     return pl.read_avro(path, **kwargs)
 
+
 def read_orc(path: str, **kwargs) -> pl.DataFrame:
     """
     Read an ORC file into a Polars DataFrame.
 
     Args:
         path: Path to the ORC file
-        **kwargs: Additional arguments passed to pl.read_orc
+        **kwargs: Additional arguments passed to pyarrow.orc.read_table
 
     Returns:
         Polars DataFrame
     """
-    return pl.read_orc(path, **kwargs)
+    try:
+        import pyarrow.orc as orc
+    except ImportError:
+        raise ImportError("pyarrow with ORC support is required") from None
+    return from_arrow_dataframe(orc.read_table(path, **kwargs))
+
 
 def read_sql(query: str, connection_uri: str, **kwargs) -> pl.DataFrame:
     """
@@ -263,7 +296,10 @@ def read_sql(query: str, connection_uri: str, **kwargs) -> pl.DataFrame:
     try:
         return pl.read_database_uri(query, connection_uri, **kwargs)
     except ImportError:
-        raise ImportError("connectorx or sqlalchemy is required. Install with 'pip install iceframe[sql]'") from None
+        raise ImportError(
+            "connectorx or sqlalchemy is required. Install with 'pip install iceframe[sql]'"
+        ) from None
+
 
 def read_xml(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -278,11 +314,13 @@ def read_xml(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
+
         # Polars doesn't have native read_xml yet, use pandas
         df_pd = pd.read_xml(path, **kwargs)
         return pl.from_pandas(df_pd)
     except ImportError:
         raise ImportError("lxml is required. Install with 'pip install iceframe[xml]'") from None
+
 
 def read_sas(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -297,10 +335,14 @@ def read_sas(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
-        df_pd = pd.read_sas(path, format='sas7bdat', **kwargs)
+
+        df_pd = pd.read_sas(path, format="sas7bdat", **kwargs)
         return pl.from_pandas(df_pd)
     except ImportError:
-        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'") from None
+        raise ImportError(
+            "pyreadstat is required. Install with 'pip install iceframe[stats]'"
+        ) from None
+
 
 def read_spss(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -315,10 +357,14 @@ def read_spss(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
+
         df_pd = pd.read_spss(path, **kwargs)
         return pl.from_pandas(df_pd)
     except ImportError:
-        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'") from None
+        raise ImportError(
+            "pyreadstat is required. Install with 'pip install iceframe[stats]'"
+        ) from None
+
 
 def read_stata(path: str, **kwargs) -> pl.DataFrame:
     """
@@ -333,12 +379,16 @@ def read_stata(path: str, **kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
+
         df_pd = pd.read_stata(path, **kwargs)
         return pl.from_pandas(df_pd)
     except ImportError:
-        raise ImportError("pyreadstat is required. Install with 'pip install iceframe[stats]'") from None
+        raise ImportError(
+            "pyreadstat is required. Install with 'pip install iceframe[stats]'"
+        ) from None
 
-def read_api(url: str, json_key: Optional[str] = None, **kwargs) -> pl.DataFrame:
+
+def read_api(url: str, json_key: str | None = None, **kwargs) -> pl.DataFrame:
     """
     Read data from a REST API into a Polars DataFrame.
 
@@ -352,6 +402,7 @@ def read_api(url: str, json_key: Optional[str] = None, **kwargs) -> pl.DataFrame
     """
     try:
         import requests
+
         response = requests.get(url, **kwargs)
         response.raise_for_status()
         data = response.json()
@@ -368,7 +419,10 @@ def read_api(url: str, json_key: Optional[str] = None, **kwargs) -> pl.DataFrame
 
         return pl.DataFrame(data)
     except ImportError:
-        raise ImportError("requests is required. Install with 'pip install iceframe[api]'") from None
+        raise ImportError(
+            "requests is required. Install with 'pip install iceframe[api]'"
+        ) from None
+
 
 def read_huggingface(dataset_name: str, split: str = "train", **kwargs) -> pl.DataFrame:
     """
@@ -384,13 +438,15 @@ def read_huggingface(dataset_name: str, split: str = "train", **kwargs) -> pl.Da
     """
     try:
         from datasets import load_dataset
+
         ds = load_dataset(dataset_name, split=split, **kwargs)
         # Convert to Arrow then Polars
-        return pl.from_arrow(ds.data.table)
+        return from_arrow_dataframe(ds.data.table)
     except ImportError:
         raise ImportError("datasets is required. Install with 'pip install iceframe[hf]'") from None
 
-def read_html(url: str, match: Optional[str] = None, **kwargs) -> pl.DataFrame:
+
+def read_html(url: str, match: str | None = None, **kwargs) -> pl.DataFrame:
     """
     Read HTML tables into a Polars DataFrame.
 
@@ -404,6 +460,7 @@ def read_html(url: str, match: Optional[str] = None, **kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
+
         # pandas.read_html returns a list of DataFrames
         dfs = pd.read_html(url, match=match, **kwargs)
 
@@ -417,7 +474,10 @@ def read_html(url: str, match: Optional[str] = None, **kwargs) -> pl.DataFrame:
         # Let's stick to first one for simplicity, user can use match to be specific
         return pl.from_pandas(dfs[0])
     except ImportError:
-        raise ImportError("lxml, html5lib, and beautifulsoup4 are required. Install with 'pip install iceframe[html]'") from None
+        raise ImportError(
+            "lxml, html5lib, and beautifulsoup4 are required. Install with 'pip install iceframe[html]'"
+        ) from None
+
 
 def read_clipboard(**kwargs) -> pl.DataFrame:
     """
@@ -431,10 +491,14 @@ def read_clipboard(**kwargs) -> pl.DataFrame:
     """
     try:
         import pandas as pd
+
         df_pd = pd.read_clipboard(**kwargs)
         return pl.from_pandas(df_pd)
     except ImportError:
-        raise ImportError("pyperclip is required. Install with 'pip install iceframe[clipboard]'") from None
+        raise ImportError(
+            "pyperclip is required. Install with 'pip install iceframe[clipboard]'"
+        ) from None
+
 
 def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
     """
@@ -455,7 +519,7 @@ def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
     if not files:
         raise ValueError(f"No files found in {path} matching {pattern}")
 
-    readers = {
+    readers: dict[str, Callable[..., pl.DataFrame]] = {
         "csv": read_csv,
         "json": read_json,
         "ndjson": read_ndjson,
@@ -470,8 +534,8 @@ def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
         "xlsx": read_excel,
     }
 
-    formats_seen: set = set()
-    dfs: list = []
+    formats_seen: set[str] = set()
+    dfs: list[pl.DataFrame] = []
     for file_path in files:
         _, ext = os.path.splitext(file_path)
         fmt = ext.lower().lstrip(".")
@@ -479,9 +543,7 @@ def read_folder(path: str, pattern: str = "*", **kwargs) -> pl.DataFrame:
         if reader is None:
             # Unknown extensions are skipped rather than crashing the whole
             # folder read — but be loud about it so users notice.
-            logger.warning(
-                "read_folder: skipping %s (unsupported extension %r)", file_path, ext
-            )
+            logger.warning("read_folder: skipping %s (unsupported extension %r)", file_path, ext)
             continue
         formats_seen.add(fmt)
         dfs.append(reader(file_path, **kwargs))

@@ -23,8 +23,14 @@ writer.close()
 
 ## How it Works
 
-When enabled, the writer tracks the number of flushes (writes to Iceberg). Once the threshold `every_n_flushes` is reached, it triggers a `bin_pack` compaction job on the table using `iceframe.compaction`. This consolidates the small data files into larger, more efficient files.
+When enabled, the writer tracks successful flushes. At the threshold it calls
+the public `ice.compact_data_files(table)` facade. A compaction failure is
+logged and raised; the preceding append may already be committed, so callers
+must handle that partial workflow explicitly.
 
 ## Requirements
 
-This feature relies on the `iceframe.compaction` module. Ensure your environment supports compaction (which typically requires Spark or a compatible engine, though IceFrame's native compaction uses PyIceberg's rewrite_data_files when available).
+No Spark process is required. IceFrame reads scoped data locally and commits
+rewritten files through PyIceberg, so memory and runtime scale with the affected
+partition. Use an external distributed engine for compaction beyond one host's
+capacity.

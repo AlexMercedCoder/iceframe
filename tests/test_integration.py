@@ -1,6 +1,5 @@
 import sys
 import unittest
-from typing import Optional
 from unittest.mock import MagicMock
 
 from pydantic import BaseModel
@@ -12,18 +11,22 @@ sys.modules["IPython.core"] = ipython_mock
 sys.modules["IPython.core.magic"] = ipython_mock
 sys.modules["IPython.core.display"] = ipython_mock
 
+
 # Fix decorators to be pass-through
 def identity_decorator(func):
     return func
+
 
 ipython_mock.line_magic = identity_decorator
 ipython_mock.cell_magic = identity_decorator
 ipython_mock.magics_class = identity_decorator
 
+
 # Define dummy Magics class
 class DummyMagics:
     def __init__(self, shell):
         self.shell = shell
+
 
 ipython_mock.Magics = DummyMagics
 
@@ -34,11 +37,13 @@ from iceframe.magics import IceFrameMagics
 # Note: In a real scenario, we'd need a running catalog or mock the catalog interaction
 # For this script, we'll try to use a mock catalog if possible, or just verify the schema conversion logic
 
+
 class User(BaseModel):
     id: int
     name: str
-    email: Optional[str] = None
+    email: str | None = None
     is_active: bool = True
+
 
 def test_pydantic_schema_conversion():
     print("Testing Pydantic schema conversion...")
@@ -55,6 +60,7 @@ def test_pydantic_schema_conversion():
     assert "is_active" in fields
     print("Schema conversion successful!")
 
+
 def test_iceframe_integration():
     print("\nTesting IceFrame integration...")
 
@@ -63,7 +69,7 @@ def test_iceframe_integration():
 
     # Mock load_catalog to avoid connection attempts. (0.12 removed the
     # CatalogPool indirection in favour of a single direct catalog handle.)
-    with unittest.mock.patch('iceframe.core.load_catalog', return_value=MagicMock()):
+    with unittest.mock.patch("iceframe.core.load_catalog", return_value=MagicMock()):
         ice = IceFrame(config)
         ice._operations = MagicMock()
 
@@ -73,15 +79,16 @@ def test_iceframe_integration():
     # Verify _operations.create_table was called with a Schema
     call_args = ice._operations.create_table.call_args
     assert call_args is not None
-    schema_arg = call_args.kwargs.get('schema')
+    schema_arg = call_args.kwargs.get("schema")
     from pyiceberg.schema import Schema
+
     assert isinstance(schema_arg, Schema)
     print("create_table with Pydantic model verified!")
 
     # Test insert_items
     users = [
         User(id=1, name="Alice", email="alice@example.com"),
-        User(id=2, name="Bob", is_active=False)
+        User(id=2, name="Bob", is_active=False),
     ]
     ice.insert_items("test_table", users)
 
@@ -90,6 +97,7 @@ def test_iceframe_integration():
     assert call_args is not None
     data_arg = call_args.args[1]
     import polars as pl
+
     assert isinstance(data_arg, pl.DataFrame)
     assert data_arg.height == 2
     print("insert_items verified!")
@@ -99,6 +107,7 @@ def test_iceframe_integration():
     assert "IceFrame Connection" in html
     assert "http://mock" in html
     print("_repr_html_ verified!")
+
 
 def test_magics():
     print("\nTesting Magics...")
@@ -123,6 +132,7 @@ def test_magics():
 
     # Mock read_table to return a DataFrame
     import polars as pl
+
     df = pl.DataFrame({"id": [1], "name": ["Alice"]})
     ice_mock.read_table.return_value = df
 
@@ -137,6 +147,7 @@ def test_magics():
         print("%%iceql magic verified!")
     except Exception as e:
         print(f"%%iceql test warning (expected if display not mocked): {e}")
+
 
 if __name__ == "__main__":
     test_pydantic_schema_conversion()

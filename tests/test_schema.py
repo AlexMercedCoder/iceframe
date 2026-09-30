@@ -22,6 +22,7 @@ def test_add_drop_column(ice_frame, test_table_name, sample_schema, cleanup_tabl
     table = ice_frame.get_table(test_table_name)
     assert "email" not in table.schema().column_names
 
+
 def test_rename_column(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test renaming columns"""
     cleanup_table(test_table_name)
@@ -34,6 +35,7 @@ def test_rename_column(ice_frame, test_table_name, sample_schema, cleanup_table)
     table = ice_frame.get_table(test_table_name)
     assert "full_name" in table.schema().column_names
     assert "name" not in table.schema().column_names
+
 
 def test_update_column_type(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test updating column type"""
@@ -48,4 +50,5 @@ def test_update_column_type(ice_frame, test_table_name, sample_schema, cleanup_t
     table = ice_frame.get_table(test_table_name)
     field = table.schema().find_field("age")
     from pyiceberg.types import LongType
+
     assert isinstance(field.field_type, LongType)

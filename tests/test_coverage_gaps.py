@@ -23,22 +23,26 @@ from iceframe.exceptions import MaintenanceError, ValidationError
 def ice(tmp_path):
     warehouse = tmp_path / "warehouse"
     warehouse.mkdir()
-    frame = IceFrame({
-        "uri": f"sqlite:///{tmp_path / 'catalog.db'}",
-        "type": "sql",
-        "warehouse": f"file://{warehouse}",
-    })
+    frame = IceFrame(
+        {
+            "uri": f"sqlite:///{tmp_path / 'catalog.db'}",
+            "type": "sql",
+            "warehouse": f"file://{warehouse}",
+        }
+    )
     frame.create_namespace("default")
     return frame
 
 
 @pytest.fixture
 def rows():
-    return pl.DataFrame({
-        "id": [1, 2, 3, 4],
-        "g": ["a", "a", "b", "b"],
-        "v": [10, 20, 30, 40],
-    })
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "g": ["a", "a", "b", "b"],
+            "v": [10, 20, 30, 40],
+        }
+    )
 
 
 @pytest.fixture
@@ -51,6 +55,7 @@ def loaded(ice, rows):
 # --------------------------------------------------------------------------
 # maintenance.py
 # --------------------------------------------------------------------------
+
 
 def test_maintenance_operations(loaded, rows):
     from iceframe.maintenance import TableMaintenance
@@ -81,6 +86,7 @@ def test_maintenance_rewrite_manifests(loaded):
 # --------------------------------------------------------------------------
 # stats.py
 # --------------------------------------------------------------------------
+
 
 def test_table_stats(loaded):
     stats = loaded.stats("default.t")
@@ -118,6 +124,7 @@ def test_stats_inspect_property(loaded):
 # --------------------------------------------------------------------------
 # incremental.py
 # --------------------------------------------------------------------------
+
 
 def test_read_incremental_returns_only_new_rows(ice, rows):
     ice.create_table("default.inc", rows)
@@ -172,6 +179,7 @@ def test_get_changes(ice, rows):
 # --------------------------------------------------------------------------
 # async_ops.py
 # --------------------------------------------------------------------------
+
 
 def test_async_read(loaded):
     """``AsyncIceFrame`` now accepts an existing IceFrame and owns a bounded
@@ -238,6 +246,7 @@ def test_async_query_builder(loaded):
 # skipping.py
 # --------------------------------------------------------------------------
 
+
 def test_data_skipper_skips_out_of_range_files():
     from iceframe.skipping import DataSkipper
 
@@ -282,6 +291,7 @@ def test_data_skipper_stats():
 # federation.py
 # --------------------------------------------------------------------------
 
+
 def test_catalog_federation(tmp_path, rows):
     from iceframe.federation import CatalogFederation
 
@@ -289,11 +299,14 @@ def test_catalog_federation(tmp_path, rows):
     for name in ("west", "east"):
         root = tmp_path / name
         (root / "warehouse").mkdir(parents=True)
-        fed.add_catalog(name, {
-            "uri": f"sqlite:///{root / 'catalog.db'}",
-            "type": "sql",
-            "warehouse": f"file://{root / 'warehouse'}",
-        })
+        fed.add_catalog(
+            name,
+            {
+                "uri": f"sqlite:///{root / 'catalog.db'}",
+                "type": "sql",
+                "warehouse": f"file://{root / 'warehouse'}",
+            },
+        )
         ice = fed.get_catalog(name)
         ice.create_namespace("default")
         ice.create_table("default.t", rows)
@@ -314,6 +327,7 @@ def test_catalog_federation(tmp_path, rows):
 # --------------------------------------------------------------------------
 # rollback.py / branching.py
 # --------------------------------------------------------------------------
+
 
 def test_rollback_to_snapshot(ice, rows):
     ice.create_table("default.rb", rows)
@@ -348,14 +362,17 @@ def test_branch_and_tag(loaded):
 # views.py / procedures.py
 # --------------------------------------------------------------------------
 
+
 def test_view_operations_report_support_clearly(loaded):
-    """The SQLite catalog has no view support; the error must be actionable."""
-    try:
-        loaded.create_view("default.v", "SELECT * FROM default.t")
-    except Exception as e:
-        assert str(e), "view failure must carry a message"
-    else:
-        assert "default.v" in str(loaded.list_tables("default")) or True
+    """The SQLite catalog has no view support; the error must be typed and actionable."""
+    import pyarrow as pa
+
+    from iceframe.exceptions import UnsupportedOperationError
+
+    with pytest.raises(UnsupportedOperationError, match="does not support views"):
+        loaded.create_view(
+            "default.v", "SELECT * FROM default.t", schema=pa.schema([("id", pa.int64())])
+        )
 
 
 def test_call_procedure_dispatch(loaded):
@@ -371,6 +388,7 @@ def test_unknown_procedure_raises(loaded):
 # --------------------------------------------------------------------------
 # mcp_server.py
 # --------------------------------------------------------------------------
+
 
 def test_mcp_read_only_default(monkeypatch):
     pytest.importorskip("mcp")
@@ -449,6 +467,7 @@ def test_mcp_query_is_row_capped(monkeypatch, tmp_path):
 # utils.py
 # --------------------------------------------------------------------------
 
+
 def test_normalize_table_identifier():
     from iceframe.utils import normalize_table_identifier
 
@@ -475,6 +494,7 @@ def test_load_catalog_config_from_env(monkeypatch):
 # --------------------------------------------------------------------------
 # schema.py
 # --------------------------------------------------------------------------
+
 
 def test_schema_evolution_add_rename_drop(ice, rows):
     ice.create_table("default.evolve", rows)
@@ -508,6 +528,7 @@ def test_sync_schema_adds_missing_columns(ice, rows):
 # gc.py edge cases
 # --------------------------------------------------------------------------
 
+
 def test_orphan_cleanup_skips_files_of_unknown_age(loaded, tmp_path):
     """Files whose mtime can't be determined are never deleted."""
     location = loaded.get_table("default.t").metadata.location.replace("file://", "")
@@ -531,13 +552,19 @@ def test_expire_snapshots_negative_retain(loaded):
 # query builder coverage
 # --------------------------------------------------------------------------
 
+
 def test_group_by_with_aggregates(loaded):
     from iceframe.functions import avg, count
     from iceframe.functions import sum as ice_sum
 
     result = (
         loaded.query("default.t")
-        .select(col("g"), ice_sum(col("v")).alias("total"), count().alias("n"), avg(col("v")).alias("mean"))
+        .select(
+            col("g"),
+            ice_sum(col("v")).alias("total"),
+            count().alias("n"),
+            avg(col("v")).alias("mean"),
+        )
         .group_by("g")
         .execute()
         .sort("g")

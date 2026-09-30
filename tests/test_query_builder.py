@@ -18,10 +18,7 @@ def test_query_select_filter(ice_frame, test_table_name, sample_schema, sample_d
     ice_frame.append_to_table(test_table_name, sample_data)
 
     # Query: SELECT id, name FROM table WHERE id > 2
-    df = (ice_frame.query(test_table_name)
-          .select("id", "name")
-          .filter(col("id") > 2)
-          .execute())
+    df = ice_frame.query(test_table_name).select("id", "name").filter(col("id") > 2).execute()
 
     assert len(df) == 3
     assert set(df.columns) == {"id", "name"}
@@ -34,27 +31,24 @@ def test_query_group_by_agg(ice_frame, test_table_name, sample_schema, cleanup_t
     ice_frame.create_table(test_table_name, sample_schema)
 
     # Add data with groups
-    data = pl.DataFrame({
-        "id": [1, 2, 3, 4, 5],
-        "name": ["A", "A", "B", "B", "C"],
-        "age": [20, 30, 40, 50, 60],
-        "created_at": [datetime.datetime.now()] * 5
-    }).with_columns([
-        pl.col("age").cast(pl.Int32),
-        pl.col("created_at").cast(pl.Datetime("us"))
-    ])
+    data = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["A", "A", "B", "B", "C"],
+            "age": [20, 30, 40, 50, 60],
+            "created_at": [datetime.datetime.now()] * 5,
+        }
+    ).with_columns([pl.col("age").cast(pl.Int32), pl.col("created_at").cast(pl.Datetime("us"))])
 
     ice_frame.append_to_table(test_table_name, data)
 
     # Query: SELECT name, count(id), avg(age) FROM table GROUP BY name
-    df = (ice_frame.query(test_table_name)
-          .select(
-              col("name"),
-              count(col("id")).alias("count"),
-              avg(col("age")).alias("avg_age")
-          )
-          .group_by("name")
-          .execute())
+    df = (
+        ice_frame.query(test_table_name)
+        .select(col("name"), count(col("id")).alias("count"), avg(col("age")).alias("avg_age"))
+        .group_by("name")
+        .execute()
+    )
 
     assert len(df) == 3
 
@@ -70,23 +64,27 @@ def test_query_window_functions(ice_frame, test_table_name, sample_schema, clean
     ice_frame.create_table(test_table_name, sample_schema)
 
     # Add data
-    data = pl.DataFrame({
-        "id": [1, 2, 3, 4, 5],
-        "name": ["A", "A", "B", "B", "C"],
-        "age": [20, 30, 40, 50, 60],
-        "created_at": [datetime.datetime.now()] * 5
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    data = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["A", "A", "B", "B", "C"],
+            "age": [20, 30, 40, 50, 60],
+            "created_at": [datetime.datetime.now()] * 5,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     ice_frame.append_to_table(test_table_name, data)
 
     # Query: SELECT *, row_number() OVER (PARTITION BY name ORDER BY age) as rn
-    df = (ice_frame.query(test_table_name)
-          .select(
-              col("name"),
-              col("age"),
-              row_number().over(partition_by=col("name"), order_by=col("age")).alias("rn")
-          )
-          .execute())
+    df = (
+        ice_frame.query(test_table_name)
+        .select(
+            col("name"),
+            col("age"),
+            row_number().over(partition_by=col("name"), order_by=col("age")).alias("rn"),
+        )
+        .execute()
+    )
 
     # Check group A
     group_a = df.filter(pl.col("name") == "A").sort("age")
@@ -98,24 +96,23 @@ def test_query_case_when(ice_frame, test_table_name, sample_schema, cleanup_tabl
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
 
-    data = pl.DataFrame({
-        "id": [1, 2, 3],
-        "name": ["A", "B", "C"],
-        "age": [20, 30, 40],
-        "created_at": [datetime.datetime.now()] * 3
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    data = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "name": ["A", "B", "C"],
+            "age": [20, 30, 40],
+            "created_at": [datetime.datetime.now()] * 3,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     ice_frame.append_to_table(test_table_name, data)
 
     # Query: SELECT age, CASE WHEN age < 30 THEN 'Young' ELSE 'Old' END as category
-    df = (ice_frame.query(test_table_name)
-          .select(
-              col("age"),
-              when(col("age") < 30, "Young")
-              .otherwise("Old")
-              .alias("category")
-          )
-          .execute())
+    df = (
+        ice_frame.query(test_table_name)
+        .select(col("age"), when(col("age") < 30, "Young").otherwise("Old").alias("category"))
+        .execute()
+    )
 
     assert df.filter(pl.col("age") == 20)["category"][0] == "Young"
     assert df.filter(pl.col("age") == 30)["category"][0] == "Old"
@@ -126,19 +123,19 @@ def test_query_update(ice_frame, test_table_name, sample_schema, cleanup_table):
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
 
-    data = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["A", "B"],
-        "age": [20, 30],
-        "created_at": [datetime.datetime.now()] * 2
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    data = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["A", "B"],
+            "age": [20, 30],
+            "created_at": [datetime.datetime.now()] * 2,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     ice_frame.append_to_table(test_table_name, data)
 
     # Update: UPDATE table SET age = 25 WHERE id = 1
-    (ice_frame.query(test_table_name)
-     .filter(col("id") == 1)
-     .update({"age": 25}))
+    (ice_frame.query(test_table_name).filter(col("id") == 1).update({"age": 25}))
 
     # Verify
     df = ice_frame.read_table(test_table_name)
@@ -151,20 +148,20 @@ def test_query_delete(ice_frame, test_table_name, sample_schema, cleanup_table):
     cleanup_table(test_table_name)
     ice_frame.create_table(test_table_name, sample_schema)
 
-    data = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["A", "B"],
-        "age": [20, 30],
-        "created_at": [datetime.datetime.now()] * 2
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    data = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["A", "B"],
+            "age": [20, 30],
+            "created_at": [datetime.datetime.now()] * 2,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     ice_frame.append_to_table(test_table_name, data)
 
     # Delete: DELETE FROM table WHERE id = 1
     try:
-        (ice_frame.query(test_table_name)
-         .filter(col("id") == 1)
-         .delete())
+        (ice_frame.query(test_table_name).filter(col("id") == 1).delete())
 
         # Verify
         df = ice_frame.read_table(test_table_name)
@@ -180,31 +177,36 @@ def test_query_merge(ice_frame, test_table_name, sample_schema, cleanup_table):
     ice_frame.create_table(test_table_name, sample_schema)
 
     # Target data
-    target = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["A", "B"],
-        "age": [20, 30],
-        "created_at": [datetime.datetime.now()] * 2
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    target = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["A", "B"],
+            "age": [20, 30],
+            "created_at": [datetime.datetime.now()] * 2,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     ice_frame.append_to_table(test_table_name, target)
 
     # Source data (1 update, 1 insert)
-    source = pl.DataFrame({
-        "id": [2, 3],
-        "name": ["B_updated", "C"],
-        "age": [35, 40],
-        "created_at": [datetime.datetime.now()] * 2
-    }).with_columns(pl.col("age").cast(pl.Int32))
+    source = pl.DataFrame(
+        {
+            "id": [2, 3],
+            "name": ["B_updated", "C"],
+            "age": [35, 40],
+            "created_at": [datetime.datetime.now()] * 2,
+        }
+    ).with_columns(pl.col("age").cast(pl.Int32))
 
     # Merge
-    (ice_frame.query(test_table_name)
-     .merge(
-         source_data=source,
-         on="id",
-         when_matched_update={"name": "name", "age": "age"}, # Update all cols
-         when_not_matched_insert={"id": "id", "name": "name", "age": "age"} # Insert all cols
-     ))
+    (
+        ice_frame.query(test_table_name).merge(
+            source_data=source,
+            on="id",
+            when_matched_update={"name": "name", "age": "age"},  # Update all cols
+            when_not_matched_insert={"id": "id", "name": "name", "age": "age"},  # Insert all cols
+        )
+    )
 
     # Verify
     df = ice_frame.read_table(test_table_name).sort("id")

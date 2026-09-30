@@ -37,4 +37,6 @@ class CatalogOperations:
             else:
                 raise NotImplementedError("Register table not supported by this catalog/client")
         except AttributeError:
-            raise NotImplementedError("Register table not supported by this catalog/client") from None
+            raise NotImplementedError(
+                "Register table not supported by this catalog/client"
+            ) from None

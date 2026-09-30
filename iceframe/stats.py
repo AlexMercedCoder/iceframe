@@ -3,14 +3,14 @@ Table statistics and metadata for IceFrame.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 import polars as pl
 from pyiceberg.table import Table
 
 from iceframe.exceptions import ValidationError
 from iceframe.metadata import MetadataInspector
-from iceframe.utils import safe_summary_dict
+from iceframe.utils import from_arrow_dataframe, safe_summary_dict
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class TableStats:
     def __init__(self, table: Table):
         self.table = table
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get comprehensive table statistics.
 
@@ -33,23 +33,23 @@ class TableStats:
         metadata = self.table.metadata
         current_snapshot = self.table.current_snapshot()
 
-        stats = {
+        stats: dict[str, Any] = {
             "table_name": self.table.name(),
             "schema": {
                 "fields": len(self.table.schema().fields),
-                "columns": [f.name for f in self.table.schema().fields]
+                "columns": [f.name for f in self.table.schema().fields],
             },
             "snapshots": {
                 "count": len(list(metadata.snapshots)),
-                "current_snapshot_id": current_snapshot.snapshot_id if current_snapshot else None
+                "current_snapshot_id": current_snapshot.snapshot_id if current_snapshot else None,
             },
             "partition_spec": {
                 "fields": len(self.table.spec().fields),
-                "spec_id": self.table.spec().spec_id
+                "spec_id": self.table.spec().spec_id,
             },
             "sort_order": {
                 "fields": len(self.table.sort_order().fields) if self.table.sort_order() else 0
-            }
+            },
         }
 
         # Add snapshot-level stats if available
@@ -58,10 +58,18 @@ class TableStats:
             if raw_summary:
                 summary = safe_summary_dict(raw_summary)
                 stats["data"] = {
-                    "total_records": int(summary.get("total-records", 0)) if summary.get("total-records") else None,
-                    "total_data_files": int(summary.get("total-data-files", 0)) if summary.get("total-data-files") else None,
-                    "total_delete_files": int(summary.get("total-delete-files", 0)) if summary.get("total-delete-files") else None,
-                    "total_size_bytes": int(summary.get("total-size", 0)) if summary.get("total-size") else None
+                    "total_records": int(summary.get("total-records", 0))
+                    if summary.get("total-records")
+                    else None,
+                    "total_data_files": int(summary.get("total-data-files", 0))
+                    if summary.get("total-data-files")
+                    else None,
+                    "total_delete_files": int(summary.get("total-delete-files", 0))
+                    if summary.get("total-delete-files")
+                    else None,
+                    "total_size_bytes": int(summary.get("total-size", 0))
+                    if summary.get("total-size")
+                    else None,
                 }
 
         # Prefer the maintained metadata tables over the hand-parsed summary
@@ -70,12 +78,12 @@ class TableStats:
         if current_snapshot:
             try:
                 files = MetadataInspector(self.table).files()
-                stats.setdefault("data", {})
-                stats["data"]["total_data_files"] = files.height
+                data_stats: dict[str, Any] = stats.setdefault("data", {})
+                data_stats["total_data_files"] = files.height
                 if "record_count" in files.columns:
-                    stats["data"]["total_records"] = int(files["record_count"].sum())
+                    data_stats["total_records"] = int(files["record_count"].sum())
                 if "file_size_in_bytes" in files.columns:
-                    stats["data"]["total_size_bytes"] = int(files["file_size_in_bytes"].sum())
+                    data_stats["total_size_bytes"] = int(files["file_size_in_bytes"].sum())
             except Exception as e:
                 logger.debug("Metadata-table stats unavailable, using summary: %s", e)
 
@@ -86,8 +94,7 @@ class TableStats:
         """Metadata tables (snapshots, files, partitions, ...) as Polars frames."""
         return MetadataInspector(self.table)
 
-
-    def profile_column(self, column_name: str) -> Dict[str, Any]:
+    def profile_column(self, column_name: str) -> dict[str, Any]:
         """
         Profile a specific column with statistics.
 
@@ -109,7 +116,7 @@ class TableStats:
 
         scan = self.table.scan().select(column_name)
         arrow_table = scan.to_arrow()
-        df = pl.from_arrow(arrow_table)
+        df = from_arrow_dataframe(arrow_table)
 
         col = df[column_name]
 
@@ -118,23 +125,34 @@ class TableStats:
             "data_type": str(col.dtype),
             "null_count": col.null_count(),
             "non_null_count": len(col) - col.null_count(),
-            "total_count": len(col)
+            "total_count": len(col),
         }
 
         # Add type-specific stats
-        if col.dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Float32, pl.Float64]:
+        if col.dtype in [
+            pl.Int8,
+            pl.Int16,
+            pl.Int32,
+            pl.Int64,
+            pl.UInt8,
+            pl.UInt16,
+            pl.UInt32,
+            pl.UInt64,
+            pl.Float32,
+            pl.Float64,
+        ]:
             profile["numeric_stats"] = {
                 "min": col.min(),
                 "max": col.max(),
                 "mean": col.mean(),
                 "median": col.median(),
-                "std_dev": col.std()
+                "std_dev": col.std(),
             }
         elif col.dtype == pl.Utf8:
             profile["string_stats"] = {
                 "min_length": col.str.len_chars().min(),
                 "max_length": col.str.len_chars().max(),
-                "avg_length": col.str.len_chars().mean()
+                "avg_length": col.str.len_chars().mean(),
             }
 
         # Distinct count (can be expensive for large tables, and unsupported

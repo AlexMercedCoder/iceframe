@@ -2,8 +2,6 @@
 Data ingestion and bulk import.
 """
 
-from typing import List
-
 from pyiceberg.table import Table
 
 
@@ -15,20 +13,16 @@ class DataIngestion:
     def __init__(self, table: Table):
         self.table = table
 
-    def add_files(self, file_paths: List[str]) -> None:
+    def add_files(self, file_paths: list[str]) -> None:
         """
         Add existing data files to the table without rewriting.
 
         Args:
             file_paths: List of absolute paths to data files (Parquet/Avro/ORC)
         """
+        if not file_paths:
+            raise ValueError("file_paths must contain at least one file")
         try:
-            if hasattr(self.table, "add_files"):
-                # PyIceberg add_files API
-                with self.table.add_files() as update:
-                    for path in file_paths:
-                        update.add_file(path)
-            else:
-                raise NotImplementedError("Adding files requires PyIceberg 0.6.0+")
-        except AttributeError:
-            raise NotImplementedError("Operation not supported by this PyIceberg version") from None
+            self.table.add_files(list(file_paths))
+        except AttributeError as exc:
+            raise NotImplementedError("Operation not supported by this PyIceberg version") from exc

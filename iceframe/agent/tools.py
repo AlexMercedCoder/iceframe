@@ -2,10 +2,10 @@
 Tool definitions for IceFrame AI Agent.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 
-def get_tool_definitions() -> List[Dict[str, Any]]:
+def get_tool_definitions() -> list[dict[str, Any]]:
     """
     Get tool definitions for LLM function calling.
 
@@ -23,11 +23,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     "properties": {
                         "namespace": {
                             "type": "string",
-                            "description": "Namespace to list tables from (default: 'default')"
+                            "description": "Namespace to list tables from (default: 'default')",
                         }
-                    }
-                }
-            }
+                    },
+                },
+            },
         },
         {
             "type": "function",
@@ -39,12 +39,12 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     "properties": {
                         "table_name": {
                             "type": "string",
-                            "description": "Name of the table to describe"
+                            "description": "Name of the table to describe",
                         }
                     },
-                    "required": ["table_name"]
-                }
-            }
+                    "required": ["table_name"],
+                },
+            },
         },
         {
             "type": "function",
@@ -54,14 +54,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "table_name": {
-                            "type": "string",
-                            "description": "Name of the table"
-                        }
+                        "table_name": {"type": "string", "description": "Name of the table"}
                     },
-                    "required": ["table_name"]
-                }
-            }
+                    "required": ["table_name"],
+                },
+            },
         },
         {
             "type": "function",
@@ -73,25 +70,27 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     "properties": {
                         "table_name": {
                             "type": "string",
-                            "description": "Name of the table to query"
+                            "description": "Name of the table to query",
                         },
                         "filter_condition": {
                             "type": "string",
-                            "description": "Optional filter condition (e.g., 'age > 30')"
+                            "description": "Optional filter condition (e.g., 'age > 30')",
                         },
                         "columns": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Columns to select (optional)"
+                            "description": "Columns to select (optional)",
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Maximum number of rows to return"
-                        }
+                            "minimum": 1,
+                            "maximum": 1000,
+                            "description": "Maximum number of rows to read (hard-capped at 1000)",
+                        },
                     },
-                    "required": ["table_name"]
-                }
-            }
+                    "required": ["table_name"],
+                },
+            },
         },
         {
             "type": "function",
@@ -103,11 +102,11 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     "properties": {
                         "operation": {
                             "type": "string",
-                            "description": "Description of the operation to generate code for"
+                            "description": "Description of the operation to generate code for",
                         }
                     },
-                    "required": ["operation"]
-                }
-            }
-        }
+                    "required": ["operation"],
+                },
+            },
+        },
     ]

@@ -3,7 +3,6 @@ Schema evolution for IceFrame.
 """
 
 import logging
-from typing import Dict, List, Optional
 
 import polars as pl
 from pyiceberg.table import Table
@@ -21,6 +20,7 @@ from pyiceberg.types import (
 
 logger = logging.getLogger(__name__)
 
+
 class SchemaEvolution:
     """
     Manages schema evolution for Iceberg tables.
@@ -29,7 +29,7 @@ class SchemaEvolution:
     def __init__(self, table: Table):
         self.table = table
 
-    def add_column(self, name: str, type_str: str, doc: Optional[str] = None) -> None:
+    def add_column(self, name: str, type_str: str, doc: str | None = None) -> None:
         """
         Add a new column to the table.
 
@@ -75,7 +75,7 @@ class SchemaEvolution:
         with self.table.update_schema() as update:
             update.update_column(name, field_type=iceberg_type)
 
-    def sync_schema(self, df: 'pl.DataFrame', allow_drops: bool = False) -> Dict[str, List[str]]:
+    def sync_schema(self, df: "pl.DataFrame", allow_drops: bool = False) -> dict[str, list[str]]:
         """
         Synchronize table schema with DataFrame schema.
 
@@ -87,7 +87,7 @@ class SchemaEvolution:
             Dict with changes applied {"added": [], "updated": [], "dropped": []}
         """
 
-        changes = {"added": [], "updated": [], "dropped": []}
+        changes: dict[str, list[str]] = {"added": [], "updated": [], "dropped": []}
 
         current_schema = self.table.schema()
         # Map current fields: name -> field

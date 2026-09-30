@@ -4,18 +4,21 @@ from iceframe.distributed import RayExecutor
 
 
 def test_ray_executor_init():
-    with patch('iceframe.distributed.RAY_AVAILABLE', True), \
-         patch('iceframe.distributed.ray') as mock_ray:
-
+    with (
+        patch("iceframe.distributed.RAY_AVAILABLE", True),
+        patch("iceframe.distributed.ray", create=True) as mock_ray,
+    ):
         mock_ray.is_initialized.return_value = False
 
         executor = RayExecutor()
         mock_ray.init.assert_called_once()
 
-def test_ray_executor_map():
-    with patch('iceframe.distributed.RAY_AVAILABLE', True), \
-         patch('iceframe.distributed.ray') as mock_ray:
 
+def test_ray_executor_map():
+    with (
+        patch("iceframe.distributed.RAY_AVAILABLE", True),
+        patch("iceframe.distributed.ray", create=True) as mock_ray,
+    ):
         executor = RayExecutor()
 
         # Mock remote function
@@ -26,17 +29,20 @@ def test_ray_executor_map():
         # Mock ray.get
         mock_ray.get.return_value = [2, 4, 6]
 
-        def double(x): return x * 2
+        def double(x):
+            return x * 2
 
         results = executor.map(double, [1, 2, 3])
 
         assert results == [2, 4, 6]
         mock_ray.get.assert_called_once()
 
-def test_ray_read_tables_parallel():
-    with patch('iceframe.distributed.RAY_AVAILABLE', True), \
-         patch('iceframe.distributed.ray') as mock_ray:
 
+def test_ray_read_tables_parallel():
+    with (
+        patch("iceframe.distributed.RAY_AVAILABLE", True),
+        patch("iceframe.distributed.ray", create=True) as mock_ray,
+    ):
         executor = RayExecutor()
 
         # Mock remote task

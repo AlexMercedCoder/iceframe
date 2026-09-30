@@ -35,6 +35,7 @@ def test_rollback_manager(ice_frame, test_table_name, sample_schema, sample_data
     except NotImplementedError:
         pytest.skip("Rollback not supported by this catalog/client")
 
+
 def test_catalog_ops(ice_frame):
     """Test CatalogOperations"""
     ops = CatalogOperations(ice_frame.catalog)
@@ -46,6 +47,7 @@ def test_catalog_ops(ice_frame):
     except Exception:
         # Expected failure due to invalid path/auth
         pass
+
 
 def test_ingestion(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test DataIngestion"""

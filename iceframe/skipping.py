@@ -2,6 +2,8 @@
 Data skipping optimizations for IceFrame.
 """
 
+from typing import Any, cast
+
 from iceframe.expressions import BinaryExpression, Column, Expression
 
 
@@ -14,11 +16,7 @@ class DataSkipper:
         self.files_skipped = 0
         self.files_scanned = 0
 
-    def can_skip_file(
-        self,
-        file_stats: dict,
-        filter_expr: Expression
-    ) -> bool:
+    def can_skip_file(self, file_stats: dict, filter_expr: Expression) -> bool:
         """
         Determine if a file can be skipped based on statistics.
 
@@ -44,7 +42,7 @@ class DataSkipper:
         if col_name not in file_stats:
             return False
 
-        stats = file_stats[col_name]
+        stats = cast(dict[str, Any], file_stats[col_name])
         value = getattr(filter_expr.right, "value", None)
         if value is None:
             return False
@@ -55,19 +53,19 @@ class DataSkipper:
 
         # col > value  -> skip when every value in the file is <= value
         if op == "gt" and hi is not None:
-            return hi <= value
+            return bool(hi <= value)
         # col >= value -> skip when every value is < value
         if op == "ge" and hi is not None:
-            return hi < value
+            return bool(hi < value)
         # col < value  -> skip when every value is >= value
         if op == "lt" and lo is not None:
-            return lo >= value
+            return bool(lo >= value)
         # col <= value -> skip when every value is > value
         if op == "le" and lo is not None:
-            return lo > value
+            return bool(lo > value)
         # col == value -> skip when value falls outside [min, max]
         if op == "eq" and lo is not None and hi is not None:
-            return value < lo or value > hi
+            return bool(value < lo or value > hi)
 
         return False
 
@@ -86,5 +84,5 @@ class DataSkipper:
         return {
             "files_skipped": self.files_skipped,
             "files_scanned": self.files_scanned,
-            "skip_rate": skip_rate
+            "skip_rate": skip_rate,
         }

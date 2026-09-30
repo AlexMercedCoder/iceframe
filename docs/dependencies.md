@@ -2,6 +2,8 @@
 
 IceFrame is designed to be lightweight with a core set of dependencies and optional extras for specific features.
 
+IceFrame requires Python 3.10 or newer and is tested on Python 3.10-3.13.
+
 ## Core Dependencies
 
 - `pyiceberg`: Core Iceberg client
@@ -38,7 +40,6 @@ pip install "iceframe[pydantic]"
 
 Required for various data ingestion and format support.
 
-- `pdf`: PDF generation (`fpdf2`, `markdown-it-py`)
 - `delta`: Delta Lake support (`deltalake`)
 - `lance`: Lance support (`pylance`)
 - `vortex`: Vortex support (`vortex-data`)
@@ -58,6 +59,13 @@ Install with:
 pip install "iceframe[ingestion]"
 ```
 
+`ingestion` includes every format extra listed below. Install all IceFrame
+runtime extras—including CLI, MCP, agent, distributed, and visualization—with:
+
+```bash
+pip install "iceframe[all]"
+```
+
 Or individually:
 ```bash
 pip install "iceframe[sql]"
@@ -73,7 +81,8 @@ pip install "iceframe[clipboard]"
 
 Required for running the Model Context Protocol server.
 
-- `mcp`: MCP server library
+- `mcp>=2.1.1,<3`: official MCP Python SDK. IceFrame uses the v2
+  `mcp.server.MCPServer` API and supports its current and legacy protocol modes.
 
 Install with:
 ```bash

@@ -2,9 +2,12 @@
 Catalog federation for multi-catalog support.
 """
 
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from iceframe.core import IceFrame
 
 
 class CatalogFederation:
@@ -13,9 +16,9 @@ class CatalogFederation:
     """
 
     def __init__(self):
-        self.catalogs: Dict[str, Any] = {}
+        self.catalogs: dict[str, IceFrame] = {}
 
-    def add_catalog(self, name: str, catalog_config: Dict[str, Any]):
+    def add_catalog(self, name: str, catalog_config: dict[str, Any]):
         """
         Add a catalog to the federation.
 
@@ -24,13 +27,14 @@ class CatalogFederation:
             catalog_config: Catalog configuration
         """
         from iceframe.core import IceFrame
+
         self.catalogs[name] = IceFrame(catalog_config)
 
-    def list_catalogs(self) -> List[str]:
+    def list_catalogs(self) -> list[str]:
         """List all registered catalogs"""
         return list(self.catalogs.keys())
 
-    def get_catalog(self, name: str):
+    def get_catalog(self, name: str) -> "IceFrame":
         """
         Get a catalog by name.
 
@@ -61,7 +65,7 @@ class CatalogFederation:
 
     def union_tables(
         self,
-        table_specs: List[tuple]  # List of (catalog_name, table_name) tuples
+        table_specs: list[tuple[str, str]],
     ) -> pl.DataFrame:
         """
         Union tables from multiple catalogs.
@@ -72,7 +76,7 @@ class CatalogFederation:
         Returns:
             Combined DataFrame
         """
-        dfs = []
+        dfs: list[pl.DataFrame] = []
         for catalog_name, table_name in table_specs:
             df = self.read_table(catalog_name, table_name)
             dfs.append(df)

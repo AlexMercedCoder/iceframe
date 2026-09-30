@@ -2,8 +2,6 @@
 Partition management for IceFrame.
 """
 
-from typing import Optional
-
 from pyiceberg.table import Table
 from pyiceberg.transforms import (
     BucketTransform,
@@ -25,7 +23,13 @@ class PartitionManager:
     def __init__(self, table: Table):
         self.table = table
 
-    def add_partition_field(self, source_col: str, transform: str = "identity", transform_arg: Optional[int] = None, name: Optional[str] = None) -> None:
+    def add_partition_field(
+        self,
+        source_col: str,
+        transform: str = "identity",
+        transform_arg: int | None = None,
+        name: str | None = None,
+    ) -> None:
         """
         Add a partition field to the table.
 
@@ -49,7 +53,7 @@ class PartitionManager:
         with self.table.update_spec() as update:
             update.remove_field(name)
 
-    def _create_transform(self, transform: str, arg: Optional[int]) -> Transform:
+    def _create_transform(self, transform: str, arg: int | None) -> Transform:
         """Create Iceberg transform object"""
         transform = transform.lower()
         if transform == "identity":

@@ -2,15 +2,19 @@
 Visualization module for IceFrame using Altair.
 """
 
-from typing import Optional
+from typing import cast
 
 import polars as pl
 
+from iceframe.utils import from_arrow_dataframe
+
 try:
     import altair as alt
+
     VIZ_AVAILABLE = True
 except ImportError:
     VIZ_AVAILABLE = False
+
 
 class Visualizer:
     """
@@ -49,10 +53,10 @@ class Visualizer:
         batches = self.ice_frame._operations.scan_batches(table_name, limit=limit)
 
         # Collect batches
-        dfs = []
+        dfs: list[pl.DataFrame] = []
         count = 0
         for batch in batches:
-            df = pl.from_arrow(batch)
+            df = from_arrow_dataframe(batch)
             dfs.append(df)
             count += df.height
             if count >= limit:
@@ -63,7 +67,7 @@ class Visualizer:
 
         return pl.concat(dfs).head(limit)
 
-    def plot_distribution(self, table_name: str, column: str, limit: int = 10000) -> 'alt.Chart':
+    def plot_distribution(self, table_name: str, column: str, limit: int = 10000) -> "alt.Chart":
         """
         Plot distribution of a column (Histogram).
 
@@ -73,56 +77,51 @@ class Visualizer:
             limit: Max rows
         """
         df = self._get_data(table_name, limit)
-        return alt.Chart(df.to_pandas()).mark_bar().encode(
-            alt.X(column, bin=True),
-            y='count()'
-        ).properties(title=f"Distribution of {column} in {table_name}")
+        return cast(
+            "alt.Chart",
+            alt.Chart(df.to_pandas())
+            .mark_bar()
+            .encode(alt.X(column, bin=True), y="count()")
+            .properties(title=f"Distribution of {column} in {table_name}"),
+        )
 
     def plot_scatter(
-        self, table_name: str, x: str, y: str, color: Optional[str] = None, limit: int = 10000
-    ) -> 'alt.Chart':
+        self, table_name: str, x: str, y: str, color: str | None = None, limit: int = 10000
+    ) -> "alt.Chart":
         """
         Plot scatter plot.
         """
         df = self._get_data(table_name, limit)
-        chart = alt.Chart(df.to_pandas()).mark_circle().encode(
-            x=x,
-            y=y,
-            tooltip=[x, y]
-        )
+        chart = alt.Chart(df.to_pandas()).mark_circle().encode(x=x, y=y, tooltip=[x, y])
 
         if color:
             chart = chart.encode(color=color)
 
-        return chart.properties(title=f"{x} vs {y} in {table_name}")
+        return cast("alt.Chart", chart.properties(title=f"{x} vs {y} in {table_name}"))
 
-    def plot_bar(
-        self, table_name: str, x: str, y: str, limit: int = 10000
-    ) -> 'alt.Chart':
+    def plot_bar(self, table_name: str, x: str, y: str, limit: int = 10000) -> "alt.Chart":
         """
         Plot bar chart.
         """
         df = self._get_data(table_name, limit)
-        return alt.Chart(df.to_pandas()).mark_bar().encode(
-            x=x,
-            y=y,
-            tooltip=[x, y]
-        ).properties(title=f"{y} by {x} in {table_name}")
+        return cast(
+            "alt.Chart",
+            alt.Chart(df.to_pandas())
+            .mark_bar()
+            .encode(x=x, y=y, tooltip=[x, y])
+            .properties(title=f"{y} by {x} in {table_name}"),
+        )
 
     def plot_line(
-        self, table_name: str, x: str, y: str, color: Optional[str] = None, limit: int = 10000
-    ) -> 'alt.Chart':
+        self, table_name: str, x: str, y: str, color: str | None = None, limit: int = 10000
+    ) -> "alt.Chart":
         """
         Plot line chart.
         """
         df = self._get_data(table_name, limit)
-        chart = alt.Chart(df.to_pandas()).mark_line().encode(
-            x=x,
-            y=y,
-            tooltip=[x, y]
-        )
+        chart = alt.Chart(df.to_pandas()).mark_line().encode(x=x, y=y, tooltip=[x, y])
 
         if color:
             chart = chart.encode(color=color)
 
-        return chart.properties(title=f"{y} over {x} in {table_name}")
+        return cast("alt.Chart", chart.properties(title=f"{y} over {x} in {table_name}"))

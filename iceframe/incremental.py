@@ -3,12 +3,12 @@ Incremental processing for IceFrame.
 """
 
 import logging
-from typing import Dict, List, Optional
 
 import polars as pl
 from pyiceberg.table import Table
 
 from iceframe.exceptions import ValidationError
+from iceframe.utils import from_arrow_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,9 @@ class IncrementalReader:
 
     def read_incremental(
         self,
-        since_snapshot_id: Optional[int] = None,
-        since_timestamp: Optional[int] = None,
-        columns: Optional[list] = None
+        since_snapshot_id: int | None = None,
+        since_timestamp: int | None = None,
+        columns: list[str] | None = None,
     ) -> pl.DataFrame:
         """
         Read only data added since a specific snapshot or timestamp.
@@ -47,15 +47,15 @@ class IncrementalReader:
             return pl.DataFrame()
 
         # Determine starting snapshot
+        start_snapshot_id: int | None
         if since_snapshot_id:
             start_snapshot_id = since_snapshot_id
         else:
+            assert since_timestamp is not None
             start_snapshot_id = self._find_snapshot_by_timestamp(since_timestamp)
 
         if start_snapshot_id is None:
-            raise ValidationError(
-                "No snapshot found at or before the requested starting point"
-            )
+            raise ValidationError("No snapshot found at or before the requested starting point")
 
         # Manifest-level incremental scan: read only the data files ADDED by
         # snapshots after `start_snapshot_id`.
@@ -70,7 +70,7 @@ class IncrementalReader:
         df = self._read_files(added_paths, columns)
         return df
 
-    def _ancestry(self, snapshot_id: Optional[int] = None) -> List[int]:
+    def _ancestry(self, snapshot_id: int | None = None) -> list[int]:
         """Snapshot ids from ``snapshot_id`` (or current) back to the root."""
         if snapshot_id is None:
             current = self.table.current_snapshot()
@@ -79,16 +79,16 @@ class IncrementalReader:
             snapshot_id = current.snapshot_id
 
         by_id = {s.snapshot_id: s for s in self.table.snapshots()}
-        chain: List[int] = []
-        cursor: Optional[int] = snapshot_id
+        chain: list[int] = []
+        cursor: int | None = snapshot_id
         while cursor is not None and cursor in by_id:
             chain.append(cursor)
             cursor = by_id[cursor].parent_snapshot_id
         return chain
 
     def _files_added_after(
-        self, start_snapshot_id: int, end_snapshot_id: Optional[int] = None
-    ) -> List[str]:
+        self, start_snapshot_id: int, end_snapshot_id: int | None = None
+    ) -> list[str]:
         """Data-file paths added strictly after ``start_snapshot_id``."""
         from pyiceberg.manifest import ManifestEntryStatus
 
@@ -105,14 +105,12 @@ class IncrementalReader:
             return []
 
         by_id = {s.snapshot_id: s for s in self.table.snapshots()}
-        paths: List[str] = []
+        paths: list[str] = []
         seen = set()
         for snapshot_id in target_ids:
             snapshot = by_id[snapshot_id]
             for manifest in snapshot.manifests(self.table.io):
-                for entry in manifest.fetch_manifest_entry(
-                    self.table.io, discard_deleted=True
-                ):
+                for entry in manifest.fetch_manifest_entry(self.table.io, discard_deleted=True):
                     if entry.status != ManifestEntryStatus.ADDED:
                         continue
                     if entry.snapshot_id is not None and entry.snapshot_id not in target_ids:
@@ -123,19 +121,19 @@ class IncrementalReader:
                         paths.append(path)
         return paths
 
-    def _empty_frame(self, columns: Optional[list] = None) -> pl.DataFrame:
+    def _empty_frame(self, columns: list[str] | None = None) -> pl.DataFrame:
         """An empty frame with the table's (optionally projected) schema."""
-        empty = pl.from_arrow(self.table.scan(limit=0).to_arrow())
+        empty = from_arrow_dataframe(self.table.scan(limit=0).to_arrow())
         if columns:
             empty = empty.select([c for c in columns if c in empty.columns])
         return empty
 
-    def _read_files(self, paths: List[str], columns: Optional[list] = None) -> pl.DataFrame:
+    def _read_files(self, paths: list[str], columns: list[str] | None = None) -> pl.DataFrame:
         """Read a set of Iceberg data files into one Polars frame."""
         import pyarrow.parquet as pq
 
         io = self.table.io
-        frames = []
+        frames: list[pl.DataFrame] = []
         for path in paths:
             try:
                 # FileIO's reader accessor is `new_input`; `new_input_file`
@@ -146,7 +144,7 @@ class IncrementalReader:
             except Exception as e:
                 logger.warning("Could not read incremental data file %s: %s", path, e)
                 continue
-            frames.append(pl.from_arrow(arrow_table))
+            frames.append(from_arrow_dataframe(arrow_table))
 
         if not frames:
             return self._empty_frame(columns)
@@ -155,9 +153,10 @@ class IncrementalReader:
     def get_changes(
         self,
         from_snapshot_id: int,
-        to_snapshot_id: Optional[int] = None,
-        columns: Optional[list] = None
-    ) -> Dict[str, pl.DataFrame]:
+        to_snapshot_id: int | None = None,
+        columns: list[str] | None = None,
+        primary_keys: list[str] | None = None,
+    ) -> dict[str, pl.DataFrame]:
         """
         Get changes (inserts, updates, deletes) between two snapshots.
 
@@ -185,12 +184,34 @@ class IncrementalReader:
             from_scan = from_scan.select(*columns)
             to_scan = to_scan.select(*columns)
 
-        from_df = pl.from_arrow(from_scan.to_arrow())
-        to_df = pl.from_arrow(to_scan.to_arrow())
+        from_df = from_arrow_dataframe(from_scan.to_arrow())
+        to_df = from_arrow_dataframe(to_scan.to_arrow())
 
-        # Compute differences
-        # This is a simplified implementation - production would use primary keys
-        # For now, we'll just return added/deleted based on row presence
+        if primary_keys:
+            missing = [key for key in primary_keys if key not in from_df.columns]
+            if missing:
+                raise ValidationError(f"Primary key columns not found: {missing}")
+            if (
+                from_df.select(primary_keys).is_duplicated().any()
+                or to_df.select(primary_keys).is_duplicated().any()
+            ):
+                raise ValidationError("primary_keys must uniquely identify rows")
+
+            added = to_df.join(from_df.select(primary_keys), on=primary_keys, how="anti")
+            deleted = from_df.join(to_df.select(primary_keys), on=primary_keys, how="anti")
+            value_columns = [c for c in to_df.columns if c not in primary_keys]
+            if value_columns:
+                joined = from_df.join(to_df, on=primary_keys, how="inner", suffix="__after")
+                changed = pl.lit(False)
+                for column in value_columns:
+                    predicate = ~pl.col(column).eq_missing(pl.col(f"{column}__after"))
+                    changed = predicate if changed is None else changed | predicate
+                modified = joined.filter(changed).select(
+                    primary_keys + [pl.col(f"{c}__after").alias(c) for c in value_columns]
+                )
+            else:
+                modified = pl.DataFrame(schema=to_df.schema)
+            return {"added": added, "deleted": deleted, "modified": modified}
 
         # Added: rows in 'to' but not in 'from'
         added = to_df.join(from_df, how="anti", on=to_df.columns)
@@ -198,17 +219,13 @@ class IncrementalReader:
         # Deleted: rows in 'from' but not in 'to'
         deleted = from_df.join(to_df, how="anti", on=from_df.columns)
 
-        # Modified: for simplicity, we'll leave this empty
-        # A real implementation would need primary key tracking
+        # Full-row semantics cannot distinguish an update from one delete plus
+        # one insert. Callers needing updates should supply primary_keys.
         modified = pl.DataFrame()
 
-        return {
-            "added": added,
-            "deleted": deleted,
-            "modified": modified
-        }
+        return {"added": added, "deleted": deleted, "modified": modified}
 
-    def _find_snapshot_by_timestamp(self, timestamp_ms: int) -> Optional[int]:
+    def _find_snapshot_by_timestamp(self, timestamp_ms: int) -> int | None:
         """Find the snapshot closest to (but before) the given timestamp"""
         snapshots = list(self.table.metadata.snapshots)
 

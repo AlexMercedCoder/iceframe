@@ -30,8 +30,8 @@ class IceFrameMagics(Magics):
             if self.active_iceframe:
                 print(f"Active IceFrame instance: {self.active_iceframe}")
                 # Try to display connection info if available
-                if hasattr(self.active_iceframe, 'catalog_config'):
-                     print(f"Catalog: {self.active_iceframe.catalog_config.get('uri')}")
+                if hasattr(self.active_iceframe, "catalog_config"):
+                    print(f"Catalog: {self.active_iceframe.catalog_config.get('uri')}")
             else:
                 print("No active IceFrame instance set. Use %iceframe <variable_name>")
             return
@@ -41,7 +41,7 @@ class IceFrameMagics(Magics):
         if var_name in self.shell.user_ns:
             obj = self.shell.user_ns[var_name]
             # Simple duck typing check or class check
-            if hasattr(obj, 'read_table') and hasattr(obj, 'query'):
+            if hasattr(obj, "read_table") and hasattr(obj, "query"):
                 self.active_iceframe = obj
                 print(f"Set active IceFrame instance to: {var_name}")
             else:
@@ -90,8 +90,9 @@ class IceFrameMagics(Magics):
             # Let's try to find table names in the query (naive approach)
             # Look for "FROM table_name" or "JOIN table_name"
             import re
-            table_names = set(re.findall(r'FROM\s+([a-zA-Z0-9_.]+)', query, re.IGNORECASE))
-            table_names.update(re.findall(r'JOIN\s+([a-zA-Z0-9_.]+)', query, re.IGNORECASE))
+
+            table_names = set(re.findall(r"FROM\s+([a-zA-Z0-9_.]+)", query, re.IGNORECASE))
+            table_names.update(re.findall(r"JOIN\s+([a-zA-Z0-9_.]+)", query, re.IGNORECASE))
 
             for table_name in table_names:
                 try:
@@ -103,13 +104,13 @@ class IceFrameMagics(Magics):
                     # Register with SQLContext
                     # Handle namespace dots in table name for SQLContext?
                     # Polars SQLContext might not like dots in table names
-                    safe_name = table_name.replace('.', '_')
+                    safe_name = table_name.replace(".", "_")
                     ctx.register(safe_name, df)
 
                     # Also register with original name if no dots, or just warn?
                     if safe_name != table_name:
-                         # Replace in query?
-                         query = query.replace(table_name, safe_name)
+                        # Replace in query?
+                        query = query.replace(table_name, safe_name)
 
                 except Exception as e:
                     print(f"Warning: Could not load table '{table_name}': {e}")
@@ -120,6 +121,7 @@ class IceFrameMagics(Magics):
 
         except Exception as e:
             print(f"Error executing query: {e}")
+
 
 def load_ipython_extension(ipython):
     """Load the extension in IPython"""

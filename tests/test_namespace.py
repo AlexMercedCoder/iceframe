@@ -36,6 +36,7 @@ def test_create_drop_namespace(ice_frame):
     namespaces_after = ice_frame.list_namespaces()
     assert not any(ns == (ns_name,) or ns == ns_name for ns in namespaces_after)
 
+
 def test_nested_namespace(ice_frame):
     """Test creating nested namespaces if supported"""
     # Note: Not all catalogs support nested namespaces, but REST usually does

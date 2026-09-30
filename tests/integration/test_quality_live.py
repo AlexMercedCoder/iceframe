@@ -13,6 +13,7 @@ def ice():
     config = load_catalog_config_from_env()
     return IceFrame(config)
 
+
 @pytest.fixture
 def temp_table(ice):
     table_name = "test_quality_live"
@@ -24,11 +25,7 @@ def temp_table(ice):
     schema = {"id": "long", "name": "string", "age": "long"}
     ice.create_table(table_name, schema)
 
-    data = pl.DataFrame({
-        "id": [1, 2, 3],
-        "name": ["Alice", "Bob", "Charlie"],
-        "age": [25, 30, 35]
-    })
+    data = pl.DataFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]})
     ice.append_to_table(table_name, data)
 
     yield table_name
@@ -38,9 +35,11 @@ def temp_table(ice):
     except Exception:
         pass
 
+
 def test_quality_live_expectations(ice, temp_table):
     # Test passing QueryBuilder
     from iceframe.expressions import col
+
     qb = ice.query(temp_table).filter(col("age") > 20)
     assert ice.quality.expect_column_values_to_be_unique(qb, "id")
 

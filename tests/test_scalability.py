@@ -32,6 +32,7 @@ def test_query_cache():
     miss_df = cache.get("test_table", {"filter": "id > 2"})
     assert miss_df is None
 
+
 def test_parallel_executor(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test parallel table operations"""
     cleanup_table(test_table_name)
@@ -39,15 +40,15 @@ def test_parallel_executor(ice_frame, test_table_name, sample_schema, cleanup_ta
 
     # Create test data
     import datetime
-    data = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["A", "B"],
-        "age": [20, 30],
-        "created_at": [datetime.datetime.now()] * 2
-    }).with_columns([
-        pl.col("age").cast(pl.Int32),
-        pl.col("created_at").cast(pl.Datetime("us"))
-    ])
+
+    data = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["A", "B"],
+            "age": [20, 30],
+            "created_at": [datetime.datetime.now()] * 2,
+        }
+    ).with_columns([pl.col("age").cast(pl.Int32), pl.col("created_at").cast(pl.Datetime("us"))])
     ice_frame.append_to_table(test_table_name, data)
 
     # Test parallel read
@@ -56,6 +57,7 @@ def test_parallel_executor(ice_frame, test_table_name, sample_schema, cleanup_ta
 
     assert test_table_name in results
     assert results[test_table_name].height == 2
+
 
 def test_memory_manager():
     """Test memory management"""
@@ -66,6 +68,7 @@ def test_memory_manager():
     if usage_mb == 0.0:
         pytest.skip("psutil not available or returning 0")
     assert usage_mb > 0
+
 
 def test_query_optimizer():
     """Test query optimization"""
@@ -80,6 +83,7 @@ def test_query_optimizer():
 
     columns = optimizer.optimize_column_projection(select_exprs, filter_exprs, group_by_exprs)
     assert set(columns) == {"id", "name", "age"}
+
 
 def test_metrics_collector():
     """Test metrics collection"""

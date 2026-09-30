@@ -44,11 +44,10 @@ class TableMaintenance:
         table = self._get_table(table_name)
 
         # Use simple calculation if specific logic needed, but let GC handle it
-        older_than_ms = int(
-            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
-        )
+        older_than_ms = int((datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000)
 
         from iceframe.gc import GarbageCollector
+
         gc = GarbageCollector(table)
         gc.expire_snapshots(older_than_ms=older_than_ms, retain_last=retain_last)
 
@@ -56,7 +55,9 @@ class TableMaintenance:
         self,
         table_name: str,
         older_than_days: int = 3,
-    ) -> None:
+        dry_run: bool = True,
+        max_workers: int = 4,
+    ) -> list[str]:
         """
         Remove orphaned data files from a table.
 
@@ -66,13 +67,16 @@ class TableMaintenance:
         """
         table = self._get_table(table_name)
 
-        older_than_ms = int(
-            (datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000
-        )
+        older_than_ms = int((datetime.now() - timedelta(days=older_than_days)).timestamp() * 1000)
 
         from iceframe.gc import GarbageCollector
+
         gc = GarbageCollector(table)
-        gc.remove_orphan_files(older_than_ms=older_than_ms)
+        return gc.remove_orphan_files(
+            older_than_ms=older_than_ms,
+            dry_run=dry_run,
+            max_workers=max_workers,
+        )
 
     def compact_data_files(
         self,
@@ -89,6 +93,7 @@ class TableMaintenance:
         table = self._get_table(table_name)
 
         from iceframe.compaction import CompactionManager
+
         compactor = CompactionManager(table)
         compactor.bin_pack(target_file_size_mb=target_file_size_mb)
 
@@ -102,5 +107,6 @@ class TableMaintenance:
         table = self._get_table(table_name)
 
         from iceframe.compaction import CompactionManager
+
         compactor = CompactionManager(table)
         compactor.rewrite_manifests()

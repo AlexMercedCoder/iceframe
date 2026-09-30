@@ -15,6 +15,7 @@ def ice():
     config = load_catalog_config_from_env()
     return IceFrame(config)
 
+
 def test_new_ingestion_live(ice, tmp_path):
     # Test XML
     xml_path = tmp_path / "test.xml"

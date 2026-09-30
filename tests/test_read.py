@@ -20,7 +20,9 @@ def test_read_empty_table(ice_frame, test_table_name, sample_schema, cleanup_tab
     assert len(df) == 0
 
 
-def test_read_table_with_data(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
+def test_read_table_with_data(
+    ice_frame, test_table_name, sample_schema, sample_data, cleanup_table
+):
     """Test reading a table with data"""
     cleanup_table(test_table_name)
 
@@ -37,7 +39,9 @@ def test_read_table_with_data(ice_frame, test_table_name, sample_schema, sample_
     assert set(df.columns) == set(sample_data.columns)
 
 
-def test_read_table_with_column_selection(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
+def test_read_table_with_column_selection(
+    ice_frame, test_table_name, sample_schema, sample_data, cleanup_table
+):
     """Test reading specific columns"""
     cleanup_table(test_table_name)
 
@@ -53,7 +57,9 @@ def test_read_table_with_column_selection(ice_frame, test_table_name, sample_sch
     assert len(df) == len(sample_data)
 
 
-def test_read_table_with_limit(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
+def test_read_table_with_limit(
+    ice_frame, test_table_name, sample_schema, sample_data, cleanup_table
+):
     """Test reading with row limit"""
     cleanup_table(test_table_name)
 

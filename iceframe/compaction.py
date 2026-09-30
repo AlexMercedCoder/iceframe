@@ -3,21 +3,22 @@ Advanced compaction strategies for Iceberg tables.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import polars as pl
-from pyiceberg.expressions import AlwaysTrue, And, EqualTo, IsNull
+from pyiceberg.expressions import AlwaysTrue, And, EqualTo, IsNull, Reference
 from pyiceberg.table import Table
 
 from iceframe.cache import invalidate_query_cache
 from iceframe.exceptions import CompactionError, UnsupportedOperationError
+from iceframe.utils import from_arrow_dataframe
 
 logger = logging.getLogger(__name__)
 
 
 def _eq_or_isnull(col: str, val: Any):
     """``EqualTo(col, None)`` is invalid in Iceberg — nulls need ``IsNull``."""
-    return IsNull(col) if val is None else EqualTo(col, val)
+    term = Reference(col)
+    return IsNull(term=term) if val is None else EqualTo(term=term, value=val)
 
 
 def _conjunction(preds) -> Any:
@@ -38,8 +39,8 @@ class CompactionManager:
 
     def _scope_filter(
         self,
-        filter_expr: Optional[Any],
-        partition_filter: Optional[Dict[str, Any]],
+        filter_expr: Any | None,
+        partition_filter: dict[str, Any] | None,
     ) -> Any:
         """
         Build the Iceberg predicate describing *exactly* the rows this
@@ -59,6 +60,7 @@ class CompactionManager:
         if filter_expr is not None:
             if isinstance(filter_expr, str):
                 from pyiceberg.expressions import parser
+
                 preds.append(parser.parse(filter_expr))
             elif hasattr(filter_expr, "pushdown"):
                 pushed, fully = filter_expr.pushdown()
@@ -78,16 +80,15 @@ class CompactionManager:
 
         return _conjunction(preds)
 
-
     def bin_pack(
         self,
         target_file_size_mb: int = 128,
-        filter_expr: Optional[str] = None,
+        filter_expr: str | None = None,
         min_input_files: int = 1,
-        partition_filter: Optional[Dict[str, Any]] = None,
+        partition_filter: dict[str, Any] | None = None,
         deduplicate: bool = False,
-        **kwargs
-    ) -> Dict[str, int]:
+        **kwargs,
+    ) -> dict[str, Any]:
         """
         Compact small files into larger files (Bin-packing).
         Safe implementation: Compacts one partition at a time to manage memory.
@@ -139,7 +140,7 @@ class CompactionManager:
         # the primary knob of a bin-packing compactor was decorative. It maps
         # onto Iceberg's own writer property, which PyIceberg honours when it
         # splits an Arrow table into data files.
-        write_properties: Dict[str, str] = {}
+        write_properties: dict[str, str] = {}
         if target_file_size_mb:
             write_properties[TableProperties.WRITE_TARGET_FILE_SIZE_BYTES] = str(
                 int(target_file_size_mb) * 1024 * 1024
@@ -166,8 +167,8 @@ class CompactionManager:
             total_bytes = sum(t.file.file_size_in_bytes for t in tasks)
 
             unique_partitions = {str(t.file.partition) for t in tasks}
-            total_partitions = len(unique_partitions) if unique_partitions else (
-                1 if total_files > 0 else 0
+            total_partitions = (
+                len(unique_partitions) if unique_partitions else (1 if total_files > 0 else 0)
             )
 
             should_skip = False
@@ -216,7 +217,9 @@ class CompactionManager:
                 descending = [sf.direction == SortDirection.DESC for sf in identity_fields]
                 logger.debug("Applying sort order %s", sort_cols)
                 return (
-                    pl.from_arrow(arrow_tbl).sort(sort_cols, descending=descending).to_arrow()
+                    from_arrow_dataframe(arrow_tbl)
+                    .sort(sort_cols, descending=descending)
+                    .to_arrow()
                 )
             except Exception as e:
                 logger.warning("Failed to apply sort order: %s", e)
@@ -246,7 +249,7 @@ class CompactionManager:
                 }
 
             if deduplicate:
-                df = pl.from_arrow(arrow_table)
+                df = from_arrow_dataframe(arrow_table)
                 original_rows = df.height
                 df = df.unique()
                 logger.info("Deduplicated: %d -> %d rows", original_rows, df.height)
@@ -261,7 +264,7 @@ class CompactionManager:
             # table with the filtered subset - i.e. silently deletes every
             # non-matching row. See _scope_filter().
             self.table.overwrite(arrow_table, overwrite_filter=scope_filter)
-            invalidate_query_cache(self.table.name())
+            invalidate_query_cache(".".join(self.table.name()))
 
             return {
                 "rewritten_rows": arrow_table.num_rows,
@@ -276,14 +279,12 @@ class CompactionManager:
             row_filter=scope_filter,
             selected_fields=tuple(source_col_names),
         )
-        partitions_df = pl.from_arrow(partition_dist_scan.to_arrow()).unique()
+        partitions_df = from_arrow_dataframe(partition_dist_scan.to_arrow()).unique()
 
         _apply_write_properties()
 
-        def process_partition(row):
-            part_filter = _conjunction(
-                [_eq_or_isnull(col, val) for col, val in row.items()]
-            )
+        def process_partition(row: dict[str, Any]) -> dict[str, Any]:
+            part_filter = _conjunction([_eq_or_isnull(col, val) for col, val in row.items()])
 
             # Count files & bytes for the min_input_files gate.
             part_bytes = 0
@@ -303,7 +304,7 @@ class CompactionManager:
                 return {"skipped": True}
 
             if deduplicate:
-                part_arrow = pl.from_arrow(part_arrow).unique().to_arrow()
+                part_arrow = from_arrow_dataframe(part_arrow).unique().to_arrow()
 
             part_arrow = _sorted(part_arrow)
 
@@ -319,14 +320,11 @@ class CompactionManager:
                 except CommitFailedException as e:
                     attempt += 1
                     if attempt > retries:
-                        logger.error(
-                            "All %d retries failed for partition %s: %s", retries, row, e
-                        )
+                        logger.error("All %d retries failed for partition %s: %s", retries, row, e)
                         raise
                     sleep_time = random.uniform(0.1, 1.0) * attempt
                     logger.warning(
-                        "Commit conflict for partition %s; retrying in %.2fs "
-                        "(attempt %d/%d)",
+                        "Commit conflict for partition %s; retrying in %.2fs (attempt %d/%d)",
                         row,
                         sleep_time,
                         attempt,
@@ -338,7 +336,7 @@ class CompactionManager:
 
             return {"rewritten_rows": part_arrow.num_rows, "skipped": False, "bytes": part_bytes}
 
-        results = []
+        results: list[dict[str, Any]] = []
         partitions_list = partitions_df.to_dicts()
 
         if max_workers > 1:
@@ -359,7 +357,7 @@ class CompactionManager:
             for p in partitions_list:
                 results.append(process_partition(p))
 
-        invalidate_query_cache(self.table.name())
+        invalidate_query_cache(".".join(self.table.name()))
 
         skipped_partitions_count = sum(1 for r in results if r.get("skipped"))
         rewritten_partitions = sum(1 for r in results if not r.get("skipped"))
@@ -379,11 +377,11 @@ class CompactionManager:
 
     def sort(
         self,
-        sort_order: List[Any],
-        filter_expr: Optional[Any] = None,
+        sort_order: list[str],
+        filter_expr: Any | None = None,
         target_file_size_mb: int = 128,
-        descending: Optional[List[bool]] = None,
-    ) -> Dict[str, Any]:
+        descending: list[bool] | None = None,
+    ) -> dict[str, Any]:
         """
         Rewrite data files sorted by ``sort_order``.
 
@@ -408,7 +406,7 @@ class CompactionManager:
         scope_filter = self._scope_filter(filter_expr, None)
         scoped = not isinstance(scope_filter, AlwaysTrue)
 
-        df = pl.from_arrow(self.table.scan(row_filter=scope_filter).to_arrow())
+        df = from_arrow_dataframe(self.table.scan(row_filter=scope_filter).to_arrow())
         if df.height == 0:
             return {
                 "rewritten_rows": 0,
@@ -423,19 +421,22 @@ class CompactionManager:
 
         if target_file_size_mb:
             from pyiceberg.table import TableProperties
+
             try:
                 with self.table.transaction() as txn:
-                    txn.set_properties({
-                        TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(
-                            int(target_file_size_mb) * 1024 * 1024
-                        )
-                    })
+                    txn.set_properties(
+                        {
+                            TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(
+                                int(target_file_size_mb) * 1024 * 1024
+                            )
+                        }
+                    )
             except Exception as e:
                 logger.warning("Failed to set target file size: %s", e)
 
         sorted_df = df.sort(list(sort_order), descending=descending or False)
         self.table.overwrite(sorted_df.to_arrow(), overwrite_filter=scope_filter)
-        invalidate_query_cache(self.table.name())
+        invalidate_query_cache(".".join(self.table.name()))
 
         return {
             "rewritten_rows": sorted_df.height,
@@ -444,7 +445,7 @@ class CompactionManager:
             "scoped": scoped,
         }
 
-    def enable_bloom_filters(self, columns: List[str], fpp: float = 0.01) -> Dict[str, Any]:
+    def enable_bloom_filters(self, columns: list[str], fpp: float = 0.01) -> dict[str, Any]:
         """
         Enable Bloom Filters for specific columns to speed up point lookups.
 
@@ -453,30 +454,26 @@ class CompactionManager:
             fpp: False positive probability (default 0.01).
         """
         try:
-             with self.table.transaction() as txn:
-                 # Set fpp global
-                 txn.set_properties({"write.parquet.bloom-filter-fpp": str(fpp)})
+            with self.table.transaction() as txn:
+                # Set fpp global
+                txn.set_properties({"write.parquet.bloom-filter-fpp": str(fpp)})
 
-                 # Enable for specific columns
-                 updates = {}
-                 for col in columns:
-                     updates[f"write.parquet.bloom-filter-enabled.column.{col}"] = "true"
-                 txn.set_properties(updates)
+                # Enable for specific columns
+                updates = {}
+                for col in columns:
+                    updates[f"write.parquet.bloom-filter-enabled.column.{col}"] = "true"
+                txn.set_properties(updates)
 
-             return {
-                 "status": "enabled",
-                 "columns": columns,
-                 "fpp": fpp
-             }
+            return {"status": "enabled", "columns": columns, "fpp": fpp}
         except Exception as e:
             raise CompactionError(f"Failed to enable bloom filters: {e}") from e
 
     def z_order_optimize(
         self,
-        columns: List[str],
+        columns: list[str],
         target_file_size_mb: int = 128,
-        filter_expr: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        filter_expr: str | None = None,
+    ) -> dict[str, Any]:
         """
         Approximate Z-Order clustering by sorting hierarchically on ``columns``.
 
@@ -504,7 +501,7 @@ class CompactionManager:
         scoped = not isinstance(scope_filter, AlwaysTrue)
 
         scan = self.table.scan(row_filter=scope_filter)
-        df = pl.from_arrow(scan.to_arrow())
+        df = from_arrow_dataframe(scan.to_arrow())
 
         if df.height == 0:
             return {
@@ -516,19 +513,22 @@ class CompactionManager:
 
         if target_file_size_mb:
             from pyiceberg.table import TableProperties
+
             try:
                 with self.table.transaction() as txn:
-                    txn.set_properties({
-                        TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(
-                            int(target_file_size_mb) * 1024 * 1024
-                        )
-                    })
+                    txn.set_properties(
+                        {
+                            TableProperties.WRITE_TARGET_FILE_SIZE_BYTES: str(
+                                int(target_file_size_mb) * 1024 * 1024
+                            )
+                        }
+                    )
             except Exception as e:
                 logger.warning("Failed to set target file size: %s", e)
 
         sorted_df = df.sort(columns)
         self.table.overwrite(sorted_df.to_arrow(), overwrite_filter=scope_filter)
-        invalidate_query_cache(self.table.name())
+        invalidate_query_cache(".".join(self.table.name()))
 
         return {
             "rewritten_rows": df.height,
@@ -558,7 +558,10 @@ class CompactionManager:
             manifests = list(current_snapshot.manifests(self.table.io))
 
             if len(manifests) <= 1:
-                return {"rewritten_manifests": 0, "message": "Only one manifest, no optimization needed"}
+                return {
+                    "rewritten_manifests": 0,
+                    "message": "Only one manifest, no optimization needed",
+                }
 
             # Calculate total entries across all manifests
             total_entries = sum(m.added_files_count or 0 for m in manifests)
@@ -570,7 +573,7 @@ class CompactionManager:
             if avg_entries_per_manifest > 100:  # Arbitrary threshold
                 return {
                     "rewritten_manifests": 0,
-                    "message": f"Manifests already well-sized ({avg_entries_per_manifest:.0f} entries/manifest)"
+                    "message": f"Manifests already well-sized ({avg_entries_per_manifest:.0f} entries/manifest)",
                 }
 
             # Native implementation would require:
@@ -581,14 +584,11 @@ class CompactionManager:
 
             # This is complex and requires direct metadata manipulation
             # For now, we'll check if PyIceberg supports it
-            if hasattr(self.table, 'rewrite_manifests'):
+            if hasattr(self.table, "rewrite_manifests"):
                 result = self.table.rewrite_manifests()
-                if hasattr(result, 'commit'):
+                if hasattr(result, "commit"):
                     result.commit()
-                return {
-                    "rewritten_manifests": len(manifests),
-                    "original_count": len(manifests)
-                }
+                return {"rewritten_manifests": len(manifests), "original_count": len(manifests)}
             else:
                 # Return diagnostic info for manual optimization
                 return {
@@ -597,7 +597,7 @@ class CompactionManager:
                     "manifest_count": len(manifests),
                     "total_entries": total_entries,
                     "avg_entries_per_manifest": avg_entries_per_manifest,
-                    "recommendation": "Consider upgrading PyIceberg or using Spark for manifest optimization"
+                    "recommendation": "Consider upgrading PyIceberg or using Spark for manifest optimization",
                 }
 
         except Exception as e:

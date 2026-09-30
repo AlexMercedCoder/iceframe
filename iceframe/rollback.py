@@ -37,7 +37,7 @@ class RollbackManager:
         """
         try:
             if hasattr(self.table, "manage_snapshots"):
-                self.table.manage_snapshots().rollback_to_time(timestamp_ms).commit()
+                self.table.manage_snapshots().rollback_to_timestamp(timestamp_ms).commit()
             else:
                 raise NotImplementedError("Rollback requires PyIceberg 0.6.0+")
         except AttributeError:

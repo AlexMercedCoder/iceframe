@@ -13,6 +13,7 @@ def ice():
     config = load_catalog_config_from_env()
     return IceFrame(config)
 
+
 def test_optional_ingestion_live_skip_if_missing(ice, tmp_path):
     # This test will likely fail or require skipping if dependencies aren't installed.
     # We'll try to use Excel as it's common, but we need fastexcel.

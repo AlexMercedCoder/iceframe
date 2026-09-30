@@ -2,6 +2,7 @@
 Tests for advanced Iceberg features.
 """
 
+import pyarrow as pa
 import pytest
 
 from iceframe.compaction import CompactionManager
@@ -19,7 +20,7 @@ def test_view_manager(ice_frame):
     sql = "SELECT * FROM source_table"
 
     try:
-        manager.create_view(view_name, sql, replace=True)
+        manager.create_view(view_name, sql, schema=pa.schema([("id", pa.int64())]), replace=True)
         # Verify exists
         views = manager.list_views()
         assert any(view_name in v for v in views)
@@ -30,6 +31,7 @@ def test_view_manager(ice_frame):
         pytest.skip("Views not supported by this catalog")
     except Exception as e:
         pytest.skip(f"View creation failed (likely catalog support): {e}")
+
 
 def test_compaction_manager(ice_frame, test_table_name, sample_schema, sample_data, cleanup_table):
     """Test CompactionManager"""
@@ -57,6 +59,7 @@ def test_compaction_manager(ice_frame, test_table_name, sample_schema, sample_da
         # Might fail if no manifests to rewrite, but shouldn't raise unexpected error
         pass
 
+
 def test_partition_evolution(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test PartitionEvolution"""
     cleanup_table(test_table_name)
@@ -74,6 +77,7 @@ def test_partition_evolution(ice_frame, test_table_name, sample_schema, cleanup_
         assert len(table.spec().fields) > 0
     except Exception as e:
         pytest.fail(f"Partition evolution failed: {e}")
+
 
 def test_stored_procedures(ice_frame, test_table_name, sample_schema, cleanup_table):
     """Test StoredProcedures"""

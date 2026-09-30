@@ -31,20 +31,11 @@ results = executor.read_tables_parallel(ice, ["users", "orders", "products"])
 
 **Install**: No additional dependencies required
 
-## Connection Pooling
+## Catalog lifecycle
 
-Reuse catalog connections for better performance:
-
-```python
-from iceframe.pool import CatalogPool
-
-pool = CatalogPool(catalog_config, pool_size=5)
-conn = pool.get_connection()
-# Use connection
-pool.return_connection(conn)
-```
-
-**Install**: No additional dependencies required
+A synchronous `IceFrame` owns one catalog handle. The removed `CatalogPool`
+opened unused connections and provided no throughput benefit. Async operations
+use bounded workers with executor-local handles where a client is thread-bound.
 
 ## Memory Management
 
@@ -75,6 +66,16 @@ print(analysis["suggestions"])
 ```
 
 **Install**: No additional dependencies required
+
+Inspect a fluent query before execution:
+
+```python
+plan = ice.query("events").select("id").limit(10).explain()
+```
+
+The plan identifies pushed predicates/projections/limits and local operations.
+Joins and column-rule merges materialize locally; use a distributed engine when
+their inputs exceed one host's memory.
 
 ## Monitoring & Observability
 

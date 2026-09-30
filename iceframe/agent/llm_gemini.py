@@ -3,7 +3,8 @@ Google Gemini LLM provider for IceFrame AI Agent.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from iceframe.agent.llm_base import BaseLLM, LLMConfig
 
@@ -13,32 +14,39 @@ class GeminiLLM(BaseLLM):
 
     def __init__(self, config: LLMConfig):
         super().__init__(config)
+        self.model: Any
+        self.genai: Any
         try:
             import google.generativeai as genai
+
             genai.configure(api_key=config.api_key)
             self.model = genai.GenerativeModel(config.model)
             self.genai = genai
         except ImportError:
-            raise ImportError("google-generativeai package required. Install with: pip install 'iceframe[agent]'") from None
+            raise ImportError(
+                "google-generativeai package required. Install with: pip install 'iceframe[agent]'"
+            ) from None
 
-    def chat(self, messages: List[Dict[str, str]], tools: Optional[List[Dict]] = None) -> Dict[str, Any]:
+    def chat(
+        self, messages: list[dict[str, str]], tools: list[dict] | None = None
+    ) -> dict[str, Any]:
         """Send chat messages to Gemini"""
         # Convert messages to Gemini format
-        gemini_messages = []
+        gemini_messages: list[dict[str, Any]] = []
         for msg in messages:
             role = "user" if msg["role"] in ["user", "system"] else "model"
-            gemini_messages.append({
-                "role": role,
-                "parts": [msg["content"]]
-            })
+            gemini_messages.append({"role": role, "parts": [msg["content"]]})
 
         # Gemini tools format is different
         generation_config = {
             "temperature": self.config.temperature,
-            "max_output_tokens": self.config.max_tokens
+            "max_output_tokens": self.config.max_tokens,
         }
 
-        kwargs = {"contents": gemini_messages, "generation_config": generation_config}
+        kwargs: dict[str, Any] = {
+            "contents": gemini_messages,
+            "generation_config": generation_config,
+        }
 
         if tools:
             # Convert tools to Gemini function declarations
@@ -52,7 +60,7 @@ class GeminiLLM(BaseLLM):
                                 self.genai.protos.FunctionDeclaration(
                                     name=func["name"],
                                     description=func.get("description", ""),
-                                    parameters=func.get("parameters", {})
+                                    parameters=func.get("parameters", {}),
                                 )
                             ]
                         )
@@ -62,7 +70,7 @@ class GeminiLLM(BaseLLM):
 
         response = self.model.generate_content(**kwargs)
 
-        result = {"content": ""}
+        result: dict[str, Any] = {"content": ""}
 
         if response.text:
             result["content"] = response.text
@@ -73,33 +81,30 @@ class GeminiLLM(BaseLLM):
                 if hasattr(part, "function_call") and part.function_call:
                     if "tool_calls" not in result:
                         result["tool_calls"] = []
-                    result["tool_calls"].append({
-                        "id": f"call_{len(result.get('tool_calls', []))}",
-                        "name": part.function_call.name,
-                        "arguments": json.dumps(dict(part.function_call.args))
-                    })
+                    result["tool_calls"].append(
+                        {
+                            "id": f"call_{len(result.get('tool_calls', []))}",
+                            "name": part.function_call.name,
+                            "arguments": json.dumps(dict(part.function_call.args)),
+                        }
+                    )
 
         return result
 
-    def stream_chat(self, messages: List[Dict[str, str]]):
+    def stream_chat(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Stream chat responses from Gemini"""
-        gemini_messages = []
+        gemini_messages: list[dict[str, Any]] = []
         for msg in messages:
             role = "user" if msg["role"] in ["user", "system"] else "model"
-            gemini_messages.append({
-                "role": role,
-                "parts": [msg["content"]]
-            })
+            gemini_messages.append({"role": role, "parts": [msg["content"]]})
 
         generation_config = {
             "temperature": self.config.temperature,
-            "max_output_tokens": self.config.max_tokens
+            "max_output_tokens": self.config.max_tokens,
         }
 
         response = self.model.generate_content(
-            contents=gemini_messages,
-            generation_config=generation_config,
-            stream=True
+            contents=gemini_messages, generation_config=generation_config, stream=True
         )
 
         for chunk in response:

@@ -24,15 +24,9 @@ def test_write_audit_publish_workflow(ice_frame, test_table_name, sample_schema,
     ice_frame.create_table(test_table_name, sample_schema)
 
     # Add initial data to create a snapshot to branch from
-    initial_data = pl.DataFrame({
-        "id": [0],
-        "name": ["Initial"],
-        "age": [0],
-        "created_at": [None]
-    }).with_columns([
-        pl.col("age").cast(pl.Int32),
-        pl.col("created_at").cast(pl.Datetime("us"))
-    ])
+    initial_data = pl.DataFrame(
+        {"id": [0], "name": ["Initial"], "age": [0], "created_at": [None]}
+    ).with_columns([pl.col("age").cast(pl.Int32), pl.col("created_at").cast(pl.Datetime("us"))])
     ice_frame.append_to_table(test_table_name, initial_data)
 
     # 2. Create Audit Branch
@@ -59,15 +53,9 @@ def test_write_audit_publish_workflow(ice_frame, test_table_name, sample_schema,
     # We'll try to write using the branch property if supported, otherwise skip
 
     print(f"Writing data to branch {branch_name}...")
-    data = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["Valid", "Valid"],
-        "age": [20, 30],
-        "created_at": [None, None]
-    }).with_columns([
-        pl.col("age").cast(pl.Int32),
-        pl.col("created_at").cast(pl.Datetime("us"))
-    ])
+    data = pl.DataFrame(
+        {"id": [1, 2], "name": ["Valid", "Valid"], "age": [20, 30], "created_at": [None, None]}
+    ).with_columns([pl.col("age").cast(pl.Int32), pl.col("created_at").cast(pl.Datetime("us"))])
 
     # Write to branch using the new argument
     try:

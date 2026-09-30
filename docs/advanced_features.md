@@ -9,7 +9,7 @@ Manage cross-engine views (if supported by your catalog).
 ```python
 # Create a view
 sql = "SELECT * FROM source_table WHERE id > 100"
-ice.create_view("my_view", sql, replace=True)
+ice.create_view("my_view", sql, schema=ice.get_table("source_table").schema(), replace=True)
 
 # Drop a view
 ice.drop_view("my_view")

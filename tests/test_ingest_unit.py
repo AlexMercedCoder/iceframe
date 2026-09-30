@@ -29,7 +29,6 @@ from iceframe.ingest import (
 
 
 class TestIngest(unittest.TestCase):
-
     @patch("polars.read_delta")
     def test_read_delta(self, mock_read):
         mock_read.return_value = pl.DataFrame({"a": [1]})
@@ -39,7 +38,7 @@ class TestIngest(unittest.TestCase):
 
     def test_read_lance(self):
         with patch("lance.dataset") as mock_ds:
-            mock_ds.return_value.to_table.return_value = MagicMock() # Arrow table
+            mock_ds.return_value.to_table.return_value = MagicMock()  # Arrow table
             with patch("polars.from_arrow") as mock_from_arrow:
                 mock_from_arrow.return_value = pl.DataFrame({"a": [1]})
 
@@ -124,13 +123,12 @@ class TestIngest(unittest.TestCase):
         mock_read.assert_called_with("path/to/avro")
         self.assertIsInstance(df, pl.DataFrame)
 
-class TestIceFrameIngest(unittest.TestCase):
 
+class TestIceFrameIngest(unittest.TestCase):
     def setUp(self):
         self.config = {"uri": "http://mock", "type": "rest", "token": "dummy"}
         # 0.12 replaced CatalogPool with a direct load_catalog call.
-        with patch("iceframe.core.load_catalog"), \
-             patch("iceframe.core.TableOperations"):
+        with patch("iceframe.core.load_catalog"), patch("iceframe.core.TableOperations"):
             self.ice = IceFrame(self.config)
             self.ice.create_table = MagicMock()
             self.ice.append_to_table = MagicMock()
@@ -146,6 +144,7 @@ class TestIceFrameIngest(unittest.TestCase):
         mock_read.assert_called_with("path", version=None)
         self.ice.create_table.assert_called_with("table", schema=df)
         self.ice.append_to_table.assert_called_with("table", df)
+
 
 if __name__ == "__main__":
     unittest.main()

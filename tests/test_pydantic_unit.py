@@ -1,5 +1,4 @@
 import unittest
-from typing import List, Optional
 
 from pydantic import BaseModel
 from pyiceberg.types import (
@@ -15,7 +14,6 @@ from iceframe.pydantic import to_iceberg_schema
 
 
 class TestPydanticIntegration(unittest.TestCase):
-
     def test_simple_model(self):
         class User(BaseModel):
             id: int
@@ -34,7 +32,7 @@ class TestPydanticIntegration(unittest.TestCase):
     def test_optional_fields(self):
         class User(BaseModel):
             id: int
-            email: Optional[str] = None
+            email: str | None = None
 
         schema = to_iceberg_schema(User)
         # Find email field
@@ -64,7 +62,7 @@ class TestPydanticIntegration(unittest.TestCase):
 
     def test_list_type(self):
         class User(BaseModel):
-            tags: List[str]
+            tags: list[str]
 
         schema = to_iceberg_schema(User)
         tags_field = next(f for f in schema.fields if f.name == "tags")
@@ -72,5 +70,6 @@ class TestPydanticIntegration(unittest.TestCase):
         self.assertIsInstance(tags_field.field_type, ListType)
         self.assertIsInstance(tags_field.field_type.element_type, StringType)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@ from iceframe.ingest import read_api, read_clipboard, read_folder, read_html, re
 
 
 def test_read_api_success():
-    with patch('requests.get') as mock_get:
+    with patch("requests.get") as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
         mock_get.return_value = mock_response
@@ -18,8 +18,9 @@ def test_read_api_success():
         assert df.shape == (2, 2)
         assert df["name"][0] == "Alice"
 
+
 def test_read_api_with_key():
-    with patch('requests.get') as mock_get:
+    with patch("requests.get") as mock_get:
         mock_response = MagicMock()
         mock_response.json.return_value = {"users": [{"id": 1, "name": "Alice"}]}
         mock_get.return_value = mock_response
@@ -29,8 +30,10 @@ def test_read_api_with_key():
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (1, 2)
 
+
 def test_read_huggingface_success():
     import sys
+
     mock_datasets = MagicMock()
     mock_load = MagicMock()
     mock_datasets.load_dataset = mock_load
@@ -41,8 +44,8 @@ def test_read_huggingface_success():
     mock_ds.data.table = mock_arrow_table
     mock_load.return_value = mock_ds
 
-    with patch.dict(sys.modules, {'datasets': mock_datasets}):
-        with patch('polars.from_arrow') as mock_from_arrow:
+    with patch.dict(sys.modules, {"datasets": mock_datasets}):
+        with patch("polars.from_arrow") as mock_from_arrow:
             mock_from_arrow.return_value = pl.DataFrame({"text": ["hello"]})
 
             df = read_huggingface("test/dataset")
@@ -50,8 +53,9 @@ def test_read_huggingface_success():
             assert isinstance(df, pl.DataFrame)
             mock_load.assert_called_with("test/dataset", split="train")
 
+
 def test_read_html_success():
-    with patch('pandas.read_html') as mock_read_html:
+    with patch("pandas.read_html") as mock_read_html:
         mock_read_html.return_value = [pd.DataFrame({"col1": [1, 2]})]
 
         df = read_html("http://example.com")
@@ -59,14 +63,16 @@ def test_read_html_success():
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (2, 1)
 
+
 def test_read_clipboard_success():
-    with patch('pandas.read_clipboard') as mock_read_clipboard:
+    with patch("pandas.read_clipboard") as mock_read_clipboard:
         mock_read_clipboard.return_value = pd.DataFrame({"col1": [1, 2]})
 
         df = read_clipboard()
 
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (2, 1)
+
 
 def test_read_folder_success(tmp_path):
     # Create dummy files

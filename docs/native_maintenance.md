@@ -1,6 +1,8 @@
 # Native Maintenance Operations
 
-IceFrame provides native implementations of critical maintenance operations that work independently of PyIceberg version or catalog support.
+IceFrame provides maintenance wrappers built on the supported PyIceberg APIs in
+the version range declared by the package. Catalog and FileIO capabilities can
+still vary.
 
 ## Native Orphan File Removal
 
@@ -20,7 +22,7 @@ print(f"Found {len(orphans)} orphaned files")
 # Remove orphans older than 3 days
 import time
 three_days_ago_ms = int((time.time() - 3 * 86400) * 1000)
-removed = gc.remove_orphan_files(older_than_ms=three_days_ago_ms)
+removed = gc.remove_orphan_files(older_than_ms=three_days_ago_ms, dry_run=False)
 print(f"Removed {len(removed)} orphaned files")
 ```
 
@@ -72,24 +74,18 @@ gc = GarbageCollector(table)
 # Expire snapshots older than 7 days, keeping at least 5
 seven_days_ago_ms = int((time.time() - 7 * 86400) * 1000)
 
-try:
-    expired = gc.expire_snapshots(
-        older_than_ms=seven_days_ago_ms,
-        retain_last=5
-    )
-    print(f"Expired {len(expired)} snapshots")
-except NotImplementedError as e:
-    print(f"Snapshot expiration not supported: {e}")
+expired = gc.expire_snapshots(older_than_ms=seven_days_ago_ms, retain_last=5)
+print(f"Expired {len(expired)} snapshots")
 ```
 
 ### How It Works
 
 1. **List Snapshots**: Gets all snapshots from table metadata
 2. **Apply Retention**: Filters snapshots based on age and retention count
-3. **Expire**: Uses PyIceberg's `expire_snapshots` if available, otherwise raises `NotImplementedError`
+3. **Expire**: Commits through `Table.maintenance.expire_snapshots`.
 
 > [!NOTE]
-> Snapshot expiration requires PyIceberg 0.7.0+ or catalog support. If not available, the operation will raise `NotImplementedError`.
+> The installed PyIceberg version must remain within IceFrame's declared range.
 
 ### Use Cases
 
@@ -102,7 +98,7 @@ except NotImplementedError as e:
 | Operation | PyIceberg | IceFrame Native |
 |:----------|:----------|:----------------|
 | **Orphan File Removal** | `table.remove_orphan_files()` (v0.7+) | ✅ Works on any version |
-| **Snapshot Expiration** | `table.expire_snapshots()` (catalog-dependent) | ⚠️ Wraps PyIceberg, adds retry logic |
+| **Snapshot Expiration** | `table.maintenance.expire_snapshots()` | ✅ Retention planning wrapper |
 | **Dry Run Support** | Limited | ✅ Full support |
 | **Age Filtering** | Basic | ✅ Enhanced with file stat checks |
 
@@ -112,7 +108,7 @@ except NotImplementedError as e:
 
 ```python
 # Weekly orphan file cleanup
-gc.remove_orphan_files(older_than_ms=three_days_ago_ms)
+gc.remove_orphan_files(older_than_ms=three_days_ago_ms, dry_run=False)
 
 # Monthly snapshot expiration
 gc.expire_snapshots(older_than_ms=thirty_days_ago_ms, retain_last=10)
@@ -139,17 +135,17 @@ total_size = sum(os.path.getsize(f) for f in orphans if os.path.exists(f))
 print(f"Potential savings: {total_size / 1024**3:.2f} GB")
 
 # Perform cleanup
-gc.remove_orphan_files()
+gc.remove_orphan_files(dry_run=False)
 ```
 
 ## Limitations
 
-- **Snapshot Expiration**: Requires PyIceberg 0.7.0+ or catalog support
+- **Snapshot Expiration**: Requires the supported PyIceberg maintenance API
 - **Concurrent Writes**: Orphan detection may miss files from concurrent write operations
 - **Distributed Storage**: File listing performance depends on storage system (S3, HDFS, etc.)
 
 ## See Also
 
 - [Maintenance Guide](maintenance.md)
-- [Garbage Collection](docs/advanced_features.md#garbage-collection)
-- [Table Optimization](docs/advanced_features.md#compaction)
+- [Garbage Collection](advanced_features.md#garbage-collection)
+- [Table Optimization](advanced_features.md#compaction)

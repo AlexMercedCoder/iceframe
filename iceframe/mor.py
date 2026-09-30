@@ -9,7 +9,7 @@ silently swallow failures the way it used to.
 """
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any
 
 import pyarrow as pa
 from pyiceberg.table import Table
@@ -32,7 +32,7 @@ class MoRWriter:
     def __init__(self, table: Table):
         self.table = table
 
-    def write_position_deletes(self, data_file_path: str, positions: List[int]) -> None:
+    def write_position_deletes(self, data_file_path: str, positions: list[int]) -> None:
         """
         Write a position delete file.
 
@@ -48,8 +48,8 @@ class MoRWriter:
 
     def write_equality_deletes(
         self,
-        equality_ids: List[int],
-        rows: Union[pa.Table, List[Dict[str, Any]]],
+        equality_ids: list[int],
+        rows: pa.Table | list[dict[str, Any]],
     ) -> None:
         """
         Write an equality delete file.
@@ -78,4 +78,4 @@ class MoRWriter:
         """
         logger.debug("Copy-on-write delete on %s: %s", self.table.name(), filter_expr)
         self.table.delete(filter_expr)
-        invalidate_query_cache(self.table.name())
+        invalidate_query_cache(".".join(self.table.name()))

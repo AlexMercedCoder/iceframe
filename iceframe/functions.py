@@ -2,7 +2,7 @@
 Standard SQL functions, window functions, and case statements for IceFrame Query API.
 """
 
-from typing import Any, List, Optional, Set, Tuple, Union
+from typing import Any, cast
 
 import polars as pl
 from pyiceberg.expressions import AlwaysTrue
@@ -19,7 +19,7 @@ class Function(Expression):
     ``And(None, ...)`` had one ever reached a filter list.
     """
 
-    def pushdown(self) -> Tuple[Any, bool]:
+    def pushdown(self) -> tuple[Any, bool]:
         return AlwaysTrue(), False
 
     def to_iceberg(self):
@@ -30,16 +30,16 @@ class AggregateFunction(Function):
     """Base class for aggregate functions"""
 
     #: Set by subclasses; the single operand (may be ``None`` for ``count()``).
-    expr: Optional[Expression] = None
+    expr: Expression | None = None
 
-    def referenced_columns(self) -> Optional[Set[str]]:
+    def referenced_columns(self) -> set[str] | None:
         if self.expr is None:
             return set()
         return self.expr.referenced_columns()
 
 
 class Count(AggregateFunction):
-    def __init__(self, expr: Optional[Expression] = None):
+    def __init__(self, expr: Expression | None = None):
         self.expr = expr
 
     def to_polars(self):
@@ -54,6 +54,7 @@ class Sum(AggregateFunction):
         self.expr = expr
 
     def to_polars(self):
+        assert self.expr is not None
         return self.expr.to_polars().sum()
 
 
@@ -62,6 +63,7 @@ class Avg(AggregateFunction):
         self.expr = expr
 
     def to_polars(self):
+        assert self.expr is not None
         return self.expr.to_polars().mean()
 
 
@@ -70,6 +72,7 @@ class Min(AggregateFunction):
         self.expr = expr
 
     def to_polars(self):
+        assert self.expr is not None
         return self.expr.to_polars().min()
 
 
@@ -78,6 +81,7 @@ class Max(AggregateFunction):
         self.expr = expr
 
     def to_polars(self):
+        assert self.expr is not None
         return self.expr.to_polars().max()
 
 
@@ -95,15 +99,15 @@ class WindowFunction(Function):
     """
 
     def __init__(self):
-        self._partition_by: List[Expression] = []
-        self._order_by: List[Expression] = []
+        self._partition_by: list[Expression] = []
+        self._order_by: list[Expression] = []
         self._descending: bool = False
 
     def over(
         self,
-        partition_by: Optional[Union[Expression, List[Expression]]] = None,
-        order_by: Optional[Union[Expression, List[Expression]]] = None,
-        descending: Union[bool, List[bool]] = False,
+        partition_by: Expression | list[Expression] | None = None,
+        order_by: Expression | list[Expression] | None = None,
+        descending: bool | list[bool] = False,
     ):
         if partition_by:
             self._partition_by = partition_by if isinstance(partition_by, list) else [partition_by]
@@ -120,8 +124,8 @@ class WindowFunction(Function):
             self._descending = bool(descending)
         return self
 
-    def referenced_columns(self) -> Optional[Set[str]]:
-        cols: Set[str] = set()
+    def referenced_columns(self) -> set[str] | None:
+        cols: set[str] = set()
         for e in list(self._partition_by) + list(self._order_by) + list(self._operands()):
             sub = e.referenced_columns()
             if sub is None:
@@ -129,7 +133,7 @@ class WindowFunction(Function):
             cols |= sub
         return cols
 
-    def _operands(self) -> List[Expression]:
+    def _operands(self) -> list[Expression]:
         """Extra expressions this function reads beyond partition/order keys."""
         return []
 
@@ -196,7 +200,7 @@ class _Offset(WindowFunction):
         self.offset = offset
         self.default = default
 
-    def _operands(self) -> List[Expression]:
+    def _operands(self) -> list[Expression]:
         return [self.expr]
 
     def to_polars(self):
@@ -246,10 +250,12 @@ class Case(Expression):
         self._otherwise = value if isinstance(value, Expression) else LiteralValue(value)
         return self
 
-    def referenced_columns(self) -> Optional[Set[str]]:
-        cols: Set[str] = set()
-        for e in list(self._conditions) + list(self._values) + (
-            [self._otherwise] if self._otherwise is not None else []
+    def referenced_columns(self) -> set[str] | None:
+        cols: set[str] = set()
+        for e in (
+            list(self._conditions)
+            + list(self._values)
+            + ([self._otherwise] if self._otherwise is not None else [])
         ):
             sub = e.referenced_columns()
             if sub is None:
@@ -262,10 +268,10 @@ class Case(Expression):
             raise ValueError("Case expression must have at least one WHEN clause")
 
         # Start the chain
-        expr = pl.when(self._conditions[0].to_polars()).then(self._values[0].to_polars())
+        expr: Any = pl.when(self._conditions[0].to_polars()).then(self._values[0].to_polars())
 
         # Add remaining conditions
-        for cond, val in zip(self._conditions[1:], self._values[1:]):
+        for cond, val in zip(self._conditions[1:], self._values[1:], strict=True):
             expr = expr.when(cond.to_polars()).then(val.to_polars())
 
         # Add otherwise
@@ -279,35 +285,46 @@ class Case(Expression):
 
 # Factory functions
 
-def count(expr: Optional[Expression] = None) -> Count:
+
+def count(expr: Expression | None = None) -> Count:
     return Count(expr)
+
 
 def sum(expr: Expression) -> Sum:
     return Sum(expr)
 
+
 def avg(expr: Expression) -> Avg:
     return Avg(expr)
+
 
 def min(expr: Expression) -> Min:
     return Min(expr)
 
+
 def max(expr: Expression) -> Max:
     return Max(expr)
+
 
 def row_number() -> RowNumber:
     return RowNumber()
 
+
 def rank() -> Rank:
     return Rank()
+
 
 def dense_rank() -> DenseRank:
     return DenseRank()
 
+
 def lead(expr: Expression, offset: int = 1, default: Any = None) -> Lead:
     return Lead(expr, offset=offset, default=default)
+
 
 def lag(expr: Expression, offset: int = 1, default: Any = None) -> Lag:
     return Lag(expr, offset=offset, default=default)
 
+
 def when(condition: Expression, value: Any) -> Case:
-    return Case().when(condition, value)
+    return cast(Case, Case().when(condition, value))

@@ -2,7 +2,11 @@
 Data export functionality
 """
 
+from typing import Literal
+
 import polars as pl
+
+ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "brotli", "zstd"]
 
 
 class DataExporter:
@@ -12,7 +16,7 @@ class DataExporter:
         self,
         df: pl.DataFrame,
         output_path: str,
-        compression: str = "snappy",
+        compression: ParquetCompression = "snappy",
     ) -> None:
         """
         Export DataFrame to Parquet file.

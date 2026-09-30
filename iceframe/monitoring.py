@@ -5,21 +5,22 @@ Monitoring and observability for IceFrame.
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
 class QueryMetrics:
     """Metrics for a single query execution"""
+
     query_id: str
     table_name: str
     start_time: float
-    end_time: Optional[float] = None
+    end_time: float | None = None
     rows_scanned: int = 0
     rows_returned: int = 0
     bytes_scanned: int = 0
     cache_hit: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
     def duration_ms(self) -> float:
         """Get query duration in milliseconds"""
@@ -27,7 +28,7 @@ class QueryMetrics:
             return (self.end_time - self.start_time) * 1000
         return 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "query_id": self.query_id,
@@ -38,8 +39,9 @@ class QueryMetrics:
             "bytes_scanned": self.bytes_scanned,
             "cache_hit": self.cache_hit,
             "error": self.error,
-            "timestamp": datetime.fromtimestamp(self.start_time).isoformat()
+            "timestamp": datetime.fromtimestamp(self.start_time).isoformat(),
         }
+
 
 class MetricsCollector:
     """
@@ -47,7 +49,7 @@ class MetricsCollector:
     """
 
     def __init__(self):
-        self.metrics: Dict[str, QueryMetrics] = {}
+        self.metrics: dict[str, QueryMetrics] = {}
         self._query_counter = 0
 
     def start_query(self, table_name: str) -> str:
@@ -61,9 +63,7 @@ class MetricsCollector:
         query_id = f"query_{self._query_counter}_{int(time.time())}"
 
         self.metrics[query_id] = QueryMetrics(
-            query_id=query_id,
-            table_name=table_name,
-            start_time=time.time()
+            query_id=query_id, table_name=table_name, start_time=time.time()
         )
 
         return query_id
@@ -73,7 +73,7 @@ class MetricsCollector:
         query_id: str,
         rows_returned: int = 0,
         cache_hit: bool = False,
-        error: Optional[str] = None
+        error: str | None = None,
     ):
         """
         End query tracking.
@@ -91,7 +91,7 @@ class MetricsCollector:
             metric.cache_hit = cache_hit
             metric.error = error
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get aggregate statistics"""
         if not self.metrics:
             return {"total_queries": 0}
@@ -105,14 +105,10 @@ class MetricsCollector:
             "avg_duration_ms": sum(durations) / len(durations) if durations else 0,
             "cache_hit_rate": cache_hits / len(self.metrics) if self.metrics else 0,
             "error_rate": errors / len(self.metrics) if self.metrics else 0,
-            "total_rows_returned": sum(m.rows_returned for m in self.metrics.values())
+            "total_rows_returned": sum(m.rows_returned for m in self.metrics.values()),
         }
 
-    def get_recent_queries(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_recent_queries(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent query metrics"""
-        sorted_metrics = sorted(
-            self.metrics.values(),
-            key=lambda m: m.start_time,
-            reverse=True
-        )
+        sorted_metrics = sorted(self.metrics.values(), key=lambda m: m.start_time, reverse=True)
         return [m.to_dict() for m in sorted_metrics[:limit]]

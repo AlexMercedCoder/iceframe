@@ -6,7 +6,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import List, Optional, Set
+from typing import Any
 
 from pyiceberg.table import Table
 
@@ -31,10 +31,10 @@ class GarbageCollector:
 
     def expire_snapshots(
         self,
-        older_than_ms: Optional[int] = None,
+        older_than_ms: int | None = None,
         retain_last: int = 1,
         max_workers: int = 4,
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Expire old snapshots using PyIceberg's native maintenance API.
 
@@ -93,7 +93,7 @@ class GarbageCollector:
                 f"Installed version does not provide it: {e}"
             ) from e
 
-        expired: List[int] = []
+        expired: list[int] = []
         for snapshot_id in to_expire:
             try:
                 expire = expire.by_id(snapshot_id)
@@ -114,9 +114,9 @@ class GarbageCollector:
         logger.info("Expired %d snapshot(s) from %s", len(expired), self.table.name())
         return expired
 
-    def _valid_metadata_files(self) -> Set[str]:
+    def _valid_metadata_files(self) -> set[str]:
         """Every metadata/statistics file the table still needs."""
-        valid: Set[str] = set()
+        valid: set[str] = set()
 
         if self.table.metadata_location:
             valid.add(self.table.metadata_location)
@@ -143,7 +143,7 @@ class GarbageCollector:
 
         return valid
 
-    def _file_mtime_ms(self, file_path: str) -> Optional[float]:
+    def _file_mtime_ms(self, file_path: str) -> float | None:
         """
         Best-effort modification time in epoch milliseconds.
 
@@ -187,7 +187,7 @@ class GarbageCollector:
             filesystem, path = FileSystem.from_uri(file_path)
             info = filesystem.get_file_info(path)
             if info.mtime is not None:
-                return info.mtime.timestamp() * 1000
+                return float(info.mtime.timestamp()) * 1000
         except Exception as e:
             logger.debug("pyarrow stat failed for %s: %s", file_path, e)
 
@@ -195,10 +195,10 @@ class GarbageCollector:
 
     def remove_orphan_files(
         self,
-        older_than_ms: Optional[int] = None,
+        older_than_ms: int | None = None,
         max_workers: int = 4,
         dry_run: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Find (and optionally delete) files under the table location that no
         live snapshot or metadata entry references.
@@ -220,8 +220,8 @@ class GarbageCollector:
         try:
             # 1. Every data file referenced by ANY live snapshot. Older
             #    snapshots remain valid for time travel until expired.
-            referenced_files: Set[str] = set()
-            seen_manifests: Set[str] = set()
+            referenced_files: set[str] = set()
+            seen_manifests: set[str] = set()
             for snapshot in self.table.snapshots():
                 try:
                     for manifest in snapshot.manifests(self.table.io):
@@ -245,12 +245,12 @@ class GarbageCollector:
 
             io = self.table.io
             table_location = self.table.metadata.location
-            all_files: Set[str] = set()
+            all_files: set[str] = set()
             all_files.update(self._list_files(f"{table_location}/data"))
             all_files.update(self._list_files(f"{table_location}/metadata"))
 
             # 3. Classify
-            orphans: List[str] = []
+            orphans: list[str] = []
             for file_path in sorted(all_files):
                 if file_path in referenced_files or file_path in valid_metadata_files:
                     continue
@@ -307,10 +307,10 @@ class GarbageCollector:
         except Exception as e:
             raise MaintenanceError(f"Orphan file removal failed: {e}") from e
 
-    def _list_files(self, location: str) -> Set[str]:
+    def _list_files(self, location: str) -> set[str]:
         """List every non-directory file under ``location``."""
-        io = self.table.io
-        results: Set[str] = set()
+        io: Any = self.table.io
+        results: set[str] = set()
 
         path_to_list = location[7:] if location.startswith("file://") else location
 

@@ -9,18 +9,22 @@ sys.modules["IPython.core"] = ipython_mock
 sys.modules["IPython.core.magic"] = ipython_mock
 sys.modules["IPython.core.display"] = ipython_mock
 
+
 # Fix decorators to be pass-through
 def identity_decorator(func):
     return func
+
 
 ipython_mock.line_magic = identity_decorator
 ipython_mock.cell_magic = identity_decorator
 ipython_mock.magics_class = identity_decorator
 
+
 # Define dummy Magics class
 class DummyMagics:
     def __init__(self, shell):
         self.shell = shell
+
 
 ipython_mock.Magics = DummyMagics
 
@@ -29,7 +33,6 @@ from iceframe.magics import IceFrameMagics
 
 
 class TestIceFrameMagics(unittest.TestCase):
-
     def setUp(self):
         self.shell = MagicMock()
         self.shell.user_ns = {}
@@ -48,7 +51,7 @@ class TestIceFrameMagics(unittest.TestCase):
 
     def test_iceframe_magic_invalid_instance(self):
         not_ice = MagicMock()
-        del not_ice.read_table # Ensure it doesn't have required method
+        del not_ice.read_table  # Ensure it doesn't have required method
         self.shell.user_ns["not_ice"] = not_ice
 
         self.magics.iceframe("not_ice")
@@ -90,5 +93,6 @@ class TestIceFrameMagics(unittest.TestCase):
             else:
                 raise
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

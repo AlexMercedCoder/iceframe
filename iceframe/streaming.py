@@ -3,7 +3,7 @@ Streaming support for IceFrame.
 """
 
 import time
-from typing import Any, Dict
+from typing import Any
 
 import polars as pl
 
@@ -14,11 +14,7 @@ class StreamingWriter:
     """
 
     def __init__(
-        self,
-        ice_frame,
-        table_name: str,
-        batch_size: int = 1000,
-        flush_interval_seconds: int = 60
+        self, ice_frame, table_name: str, batch_size: int = 1000, flush_interval_seconds: int = 60
     ):
         """
         Initialize streaming writer.
@@ -33,7 +29,7 @@ class StreamingWriter:
         self.table_name = table_name
         self.batch_size = batch_size
         self.flush_interval = flush_interval_seconds
-        self._buffer = []
+        self._buffer: list[dict[str, Any]] = []
         self._last_flush = time.time()
 
         # Auto-compaction settings
@@ -48,10 +44,12 @@ class StreamingWriter:
         Args:
             every_n_flushes: Run compaction after this many flushes
         """
+        if every_n_flushes < 1:
+            raise ValueError("every_n_flushes must be >= 1")
         self.auto_compact = True
         self.compact_every_n_flushes = every_n_flushes
 
-    def write(self, record: Dict[str, Any]):
+    def write(self, record: dict[str, Any]):
         """
         Write a single record.
 
@@ -61,8 +59,10 @@ class StreamingWriter:
         self._buffer.append(record)
 
         # Flush if batch size reached or interval elapsed
-        if (len(self._buffer) >= self.batch_size or
-            time.time() - self._last_flush >= self.flush_interval):
+        if (
+            len(self._buffer) >= self.batch_size
+            or time.time() - self._last_flush >= self.flush_interval
+        ):
             self.flush()
 
     def flush(self):
@@ -83,17 +83,12 @@ class StreamingWriter:
     def _run_compaction(self):
         """Run compaction job"""
         try:
-            # Assuming compaction module exists and is exposed via ice_frame.compaction
-            # If not, we might need to import it or use operations directly
-            # For now, we'll try to use the compaction feature module if available
-            if hasattr(self.ice_frame, 'compaction'):
-                self.ice_frame.compaction.bin_pack(self.table_name)
-            else:
-                # Fallback or log warning
-                pass
-        except Exception:
-            # Don't fail streaming if compaction fails
-            pass
+            self.ice_frame.compact_data_files(self.table_name)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).exception("Auto-compaction failed for %s", self.table_name)
+            raise RuntimeError(f"Auto-compaction failed for {self.table_name}: {exc}") from exc
         finally:
             self._flushes_since_compact = 0
 
@@ -106,8 +101,8 @@ def stream_from_kafka(
     ice_frame,
     kafka_topic: str,
     table_name: str,
-    kafka_config: Dict[str, Any],
-    batch_size: int = 1000
+    kafka_config: dict[str, Any],
+    batch_size: int = 1000,
 ):
     """
     Stream data from Kafka to Iceberg table.
@@ -124,12 +119,12 @@ def stream_from_kafka(
 
         from kafka import KafkaConsumer
     except ImportError:
-        raise ImportError("kafka-python required. Install with: pip install 'iceframe[streaming]'") from None
+        raise ImportError(
+            "kafka-python required. Install with: pip install 'iceframe[streaming]'"
+        ) from None
 
     consumer = KafkaConsumer(
-        kafka_topic,
-        **kafka_config,
-        value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+        kafka_topic, **kafka_config, value_deserializer=lambda m: json.loads(m.decode("utf-8"))
     )
 
     writer = StreamingWriter(ice_frame, table_name, batch_size=batch_size)

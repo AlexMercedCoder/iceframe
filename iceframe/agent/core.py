@@ -3,7 +3,7 @@ IceFrame AI Agent - Natural language interface for Iceberg tables.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from iceframe.agent.llm_base import BaseLLM, create_llm
 from iceframe.agent.tools import get_tool_definitions
@@ -15,7 +15,7 @@ class IceFrameAgent:
     AI Agent for natural language interaction with IceFrame.
     """
 
-    def __init__(self, ice_frame: IceFrame, llm: Optional[BaseLLM] = None):
+    def __init__(self, ice_frame: IceFrame, llm: BaseLLM | None = None):
         """
         Initialize agent.
 
@@ -25,7 +25,7 @@ class IceFrameAgent:
         """
         self.ice_frame = ice_frame
         self.llm = llm or create_llm()
-        self.conversation_history: List[Dict[str, str]] = []
+        self.conversation_history: list[dict[str, str]] = []
         self.tools = get_tool_definitions()
 
         # System prompt
@@ -64,10 +64,7 @@ Be helpful, accurate, and educational."""
             Agent's response
         """
         # Add user message to history
-        self.conversation_history.append({
-            "role": "user",
-            "content": user_message
-        })
+        self.conversation_history.append({"role": "user", "content": user_message})
 
         # Prepare messages with system prompt
         messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
@@ -80,42 +77,43 @@ Be helpful, accurate, and educational."""
             tool_results = []
             for tool_call in response["tool_calls"]:
                 result = self._execute_tool(tool_call["name"], json.loads(tool_call["arguments"]))
-                tool_results.append({
-                    "tool_call_id": tool_call["id"],
-                    "name": tool_call["name"],
-                    "result": result
-                })
+                tool_results.append(
+                    {"tool_call_id": tool_call["id"], "name": tool_call["name"], "result": result}
+                )
 
             # Add tool results to conversation
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": response.get("content", ""),
-                "tool_calls": response["tool_calls"]
-            })
+            self.conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": response.get("content", ""),
+                    "tool_calls": response["tool_calls"],
+                }
+            )
 
             for tr in tool_results:
-                self.conversation_history.append({
-                    "role": "tool",
-                    "content": str(tr["result"]),
-                    "tool_call_id": tr["tool_call_id"]
-                })
+                self.conversation_history.append(
+                    {
+                        "role": "tool",
+                        "content": str(tr["result"]),
+                        "tool_call_id": tr["tool_call_id"],
+                    }
+                )
 
             # Get final response
-            messages = [{"role": "system", "content": self.system_prompt}] + self.conversation_history
+            messages = [
+                {"role": "system", "content": self.system_prompt}
+            ] + self.conversation_history
             final_response = self.llm.chat(messages)
-            assistant_message = final_response["content"]
+            assistant_message = str(final_response["content"])
         else:
-            assistant_message = response["content"]
+            assistant_message = str(response["content"])
 
         # Add assistant response to history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+        self.conversation_history.append({"role": "assistant", "content": assistant_message})
 
         return assistant_message
 
-    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    def _execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """Execute a tool and return the result"""
         try:
             if tool_name == "list_tables":
@@ -129,14 +127,10 @@ Be helpful, accurate, and educational."""
                 schema = table.schema()
                 return {
                     "columns": [
-                        {
-                            "name": f.name,
-                            "type": str(f.field_type),
-                            "required": f.required
-                        }
+                        {"name": f.name, "type": str(f.field_type), "required": f.required}
                         for f in schema.fields
                     ],
-                    "partition_spec": str(table.spec())
+                    "partition_spec": str(table.spec()),
                 }
 
             elif tool_name == "get_table_stats":
@@ -146,17 +140,23 @@ Be helpful, accurate, and educational."""
 
             elif tool_name == "execute_query":
                 table_name = arguments["table_name"]
-                limit = arguments.get("limit", 10)
+                limit = max(1, min(int(arguments.get("limit", 10)), 1000))
                 columns = arguments.get("columns")
+                filter_condition = arguments.get("filter_condition")
 
                 # Simple query execution
-                df = self.ice_frame.read_table(table_name, limit=limit, columns=columns)
+                df = self.ice_frame.read_table(
+                    table_name,
+                    limit=limit,
+                    columns=columns,
+                    filter_sql=filter_condition,
+                )
 
                 # Return sample of data
                 return {
                     "rows": df.height,
                     "columns": df.columns,
-                    "sample": df.head(min(5, df.height)).to_dicts()
+                    "sample": df.head(min(5, df.height)).to_dicts(),
                 }
 
             elif tool_name == "generate_code":

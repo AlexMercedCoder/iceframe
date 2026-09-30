@@ -7,7 +7,7 @@ using REST or SQL catalogs with local execution.
 
 #: Single source of truth for the package version. ``pyproject.toml`` reads it
 #: from here via ``[tool.setuptools.dynamic]``, so the two can never drift.
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 
 from iceframe.core import IceFrame
 from iceframe.exceptions import (
