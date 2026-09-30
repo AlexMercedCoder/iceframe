@@ -6,6 +6,85 @@ All notable changes to IceFrame are documented in this file.
 
 No changes yet.
 
+## 0.15.0 — 2026-09-30
+
+A verification release. Every optional integration now has tests against the
+real library, and every catalog-facing feature runs against Apache Polaris
+and the Iceberg REST reference catalog in CI. Most of the fixes below were
+found by those tests; several were hidden by unit tests that mocked the
+dependency they were meant to check.
+
+### ⚠️ Behaviour changes you should know about
+
+- **`stream_from_kafka` is at-least-once and can stop on its own.** It always
+  disables auto-commit and commits offsets after each successful append, so
+  it needs a `group_id`. It returns the number of records written and takes
+  `flush_interval_seconds`, `max_records`, `idle_timeout_seconds` and
+  `poll_timeout_ms`.
+- **Pydantic `required` follows the type, not the default.** `tags: list[str]
+  = []` is now required; `email: str | None` with no default is now
+  optional.
+- **Dependency floors match what was tested:** `datafusion>=48`,
+  `vortex-data>=0.67,<1`, `kafka-python>=2.1`, and `deltalake>=1.0`
+  (current Polars cannot read Delta tables with anything older).
+
+### Fixed
+
+- **DataFusion queries failed every time** with DataFusion 48 and later
+  (`register_table` rejected the Arrow table), and namespace-qualified names
+  such as `sales.orders` never resolved. Tables are now registered under a
+  DataFusion schema per namespace, plus their bare name. `query_datafusion`
+  without `tables=` now registers the tables named after FROM and JOIN, as the
+  docs always claimed.
+- **Kafka streaming could lose records.** The consumer auto-committed offsets
+  as it read, so records buffered but not yet appended were lost if the
+  process died. The flush interval was only checked when a new message
+  arrived, so a quiet topic held rows indefinitely, and a failed append was
+  retried during shutdown, which could mask the original error.
+- **A failed branch append could land on `main`.** `append_to_table(...,
+  branch=...)` retried any `TypeError` as a plain append to the main branch.
+  PyIceberg 0.11+ writes branches natively, so the fallbacks are gone.
+- **Appends failed on all-null columns.** A batch where an optional column
+  was entirely `None` (one row is enough) was inferred as the Arrow `null`
+  type and rejected. It is now cast to the table's column type, for append,
+  overwrite and upsert.
+- **Polars data could not be written to required columns.** Polars marks
+  every column nullable, and PyIceberg rejected that for `required` fields
+  even with no nulls present. Nullability is now reconciled at every nesting
+  level when the data really has no nulls; real nulls are still rejected.
+- **`read_vortex` never worked** against a real `vortex-data` release; it now
+  uses the verified `open().scan().read_all()` path.
+- **Pydantic schemas:** `X | None` mapped to `string` (only `Optional[X]` was
+  recognized), and nested, list and map field ids collided. Adds `bytes`,
+  `Decimal`, `time`, `UUID`, `Enum`, `set`, `tuple` and `dict` mappings.
+- **`IceFrame.overwrite_table` had no `overwrite_filter`**, so filtered
+  overwrites were only reachable through internal classes.
+- **Test isolation:** three test modules replaced `deltalake`, `lance`,
+  `vortex`, `fastexcel`, `gspread`, `daft` and IPython in `sys.modules` for
+  the rest of the session, so later tests silently ran against mocks.
+
+### Verification and CI
+
+- `tests/test_integrations_real.py`: DataFusion, Ray, Altair, Delta, Lance,
+  Vortex, Excel, SQL, XML, Stata, SPSS, disk cache, Pydantic, federation and
+  Kafka (against a real broker), with no mocks.
+- `tests/test_catalog_compat.py` and `scripts/compat_matrix.py`: 21 feature
+  checks per catalog, published as `docs/compatibility.md`. All pass on
+  Apache Polaris and the Iceberg REST reference catalog; views are the only
+  gap on the SQLite catalog, which does not support them.
+- New CI jobs: `integrations`, `catalogs` (Docker services from
+  `ci/catalogs-compose.yml`), `pyiceberg-floor` (0.11.1, previously never
+  tested) and a weekly, non-blocking `pyiceberg-main` early warning.
+
+### Documentation
+
+- `docs/merge_on_read.md`: why merge-on-read delete writes wait for
+  PyIceberg (0.12 falls back to copy-on-write and has no public delete-file
+  writer).
+- `docs/api-inventory.md`: proposed stability tiers and the decisions needed
+  before 1.0.
+- Updated DataFusion, Kafka streaming, Pydantic and catalog documentation.
+
 ## 0.14.0 — 2026-09-30
 
 ### Security and correctness

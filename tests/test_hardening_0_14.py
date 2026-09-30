@@ -154,6 +154,7 @@ def test_query_explain_reports_pushdown_without_scanning():
 
 def test_create_view_sends_spec_compliant_view_version():
     """0.13 passed sql= to Catalog.create_view, which has no such parameter."""
+    pytest.importorskip("pyiceberg.view.metadata", reason="view creation needs pyiceberg>=0.12")
     from iceframe.views import ViewManager
 
     catalog = MagicMock()
@@ -176,6 +177,7 @@ def test_create_view_sends_spec_compliant_view_version():
 
 
 def test_create_view_requires_schema():
+    pytest.importorskip("pyiceberg.view.metadata", reason="view creation needs pyiceberg>=0.12")
     from iceframe.views import ViewManager
 
     catalog = MagicMock()
