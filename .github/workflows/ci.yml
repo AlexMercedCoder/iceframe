@@ -136,8 +136,7 @@ jobs:
       - name: Start catalogs
         run: |
           mkdir -p "$ICEFRAME_WH/rest" "$ICEFRAME_WH/polaris"
-          docker run --rm --entrypoint cat apache/polaris:latest /etc/passwd > ci/passwd
-          echo "host:x:$(id -u):$(id -g)::/home/polaris:/bin/sh" >> ci/passwd
+          printf 'root:x:0:0::/root:/bin/sh\nhost:x:%s:%s::/tmp:/bin/sh\n' "$(id -u)" "$(id -g)" > ci/passwd
           ICEFRAME_UID=$(id -u) ICEFRAME_GID=$(id -g) docker compose -f ci/catalogs-compose.yml up -d rest polaris
       - name: Install
         run: |

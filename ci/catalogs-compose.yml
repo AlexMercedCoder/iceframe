@@ -2,24 +2,25 @@
 #
 #   export ICEFRAME_WH=/tmp/iceframe-wh ICEFRAME_UID=$(id -u) ICEFRAME_GID=$(id -g)
 #   mkdir -p $ICEFRAME_WH/rest $ICEFRAME_WH/polaris
-#   docker run --rm --entrypoint cat apache/polaris:latest /etc/passwd > ci/passwd
-#   echo "host:x:$ICEFRAME_UID:$ICEFRAME_GID::/home/polaris:/bin/sh" >> ci/passwd
+#   printf 'root:x:0:0::/root:/bin/sh\nhost:x:%s:%s::/tmp:/bin/sh\n' $ICEFRAME_UID $ICEFRAME_GID > ci/passwd
 #   docker compose -f ci/catalogs-compose.yml up -d
 #   python scripts/bootstrap_polaris.py http://localhost:18182 file://$ICEFRAME_WH/polaris
 #
 # The warehouse is mounted at the same path inside and outside the containers,
 # because the catalogs write metadata and PyIceberg writes data files there
-# directly. Polaris runs as the host user (with a passwd entry, which Hadoop's
-# local filesystem needs) so the test process can write into the table
-# directories Polaris creates.
+# directly. Both catalogs run as the host user (with a passwd entry, which
+# Hadoop's local filesystem needs) so the test process can write into the
+# table directories they create.
 services:
   rest:
     image: apache/iceberg-rest-fixture:latest
     ports: ["18181:8181"]
+    user: "${ICEFRAME_UID}:${ICEFRAME_GID}"
     environment:
       CATALOG_WAREHOUSE: file://${ICEFRAME_WH}/rest
     volumes:
       - ${ICEFRAME_WH}/rest:${ICEFRAME_WH}/rest
+      - ./passwd:/etc/passwd:ro
 
   polaris:
     image: apache/polaris:latest
