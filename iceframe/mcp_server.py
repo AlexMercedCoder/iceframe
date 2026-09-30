@@ -13,19 +13,24 @@ Set ``ICEFRAME_MCP_READ_ONLY=0`` to allow future mutating tools; it defaults to
 ``1`` (read-only) and no mutating tool ships today.
 """
 
+import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+import sys
+from pathlib import Path
+from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
+from iceframe import __version__
 from iceframe.core import IceFrame
 from iceframe.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
-# Initialize FastMCP server
-mcp = FastMCP("iceframe-mcp")
+# MCP SDK v2 high-level server. It serves both the 2026-07-28 protocol and
+# legacy initialize-era clients over the same stdio transport.
+mcp = MCPServer("iceframe-mcp", version=__version__)
 
 #: Hard caps on what a single tool call can return. Without these an agent can
 #: exhaust its context (and the server's memory) with one query.
@@ -33,7 +38,7 @@ MAX_ROWS = int(os.environ.get("ICEFRAME_MCP_MAX_ROWS", "1000"))
 MAX_BYTES = int(os.environ.get("ICEFRAME_MCP_MAX_BYTES", str(5 * 1024 * 1024)))
 
 #: Cached connection; see the module docstring.
-_ICEFRAME: Optional[IceFrame] = None
+_ICEFRAME: IceFrame | None = None
 
 
 def is_read_only() -> bool:
@@ -85,8 +90,9 @@ def get_iceframe() -> IceFrame:
     _ICEFRAME = IceFrame(catalog_config)
     return _ICEFRAME
 
+
 @mcp.tool()
-def list_tables(namespace: str = "default") -> List[str]:
+def list_tables(namespace: str = "default") -> list[str]:
     """
     List all tables in a namespace.
 
@@ -96,8 +102,9 @@ def list_tables(namespace: str = "default") -> List[str]:
     ice = get_iceframe()
     return ice.list_tables(namespace)
 
+
 @mcp.tool()
-def describe_table(table_name: str) -> Dict[str, Any]:
+def describe_table(table_name: str) -> dict[str, Any]:
     """
     Get schema and metadata for a table.
 
@@ -109,19 +116,16 @@ def describe_table(table_name: str) -> Dict[str, Any]:
     schema = table.schema()
     return {
         "columns": [
-            {
-                "name": f.name,
-                "type": str(f.field_type),
-                "required": f.required
-            }
+            {"name": f.name, "type": str(f.field_type), "required": f.required}
             for f in schema.fields
         ],
         "partition_spec": str(table.spec()),
-        "properties": table.properties
+        "properties": table.properties,
     }
 
+
 @mcp.tool()
-def get_table_stats(table_name: str) -> Dict[str, Any]:
+def get_table_stats(table_name: str) -> dict[str, Any]:
     """
     Get statistics for a table.
 
@@ -131,8 +135,9 @@ def get_table_stats(table_name: str) -> Dict[str, Any]:
     ice = get_iceframe()
     return ice.stats(table_name)
 
+
 @mcp.tool()
-def get_schema(table_name: str) -> Dict[str, Any]:
+def get_schema(table_name: str) -> dict[str, Any]:
     """
     Get a structured schema for query planning: column names, types,
     nullability, partition columns and sort columns.
@@ -172,10 +177,10 @@ def get_schema(table_name: str) -> Dict[str, Any]:
 @mcp.tool()
 def execute_query(
     table_name: str,
-    query: Optional[str] = None,
+    query: str | None = None,
     limit: int = 10,
-    columns: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    columns: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Execute a read-only query on a table and return results.
 
@@ -191,26 +196,37 @@ def execute_query(
     ice = get_iceframe()
 
     effective_limit = max(1, min(int(limit), MAX_ROWS))
-    df = ice.read_table(
-        table_name, filter_expr=query, limit=effective_limit, columns=columns
-    )
+    df = ice.read_table(table_name, filter_sql=query, limit=effective_limit, columns=columns)
 
     truncated_rows = effective_limit < limit
     truncated_bytes = False
 
-    # Byte cap: shrink until the payload fits.
-    while df.height > 1 and df.estimated_size() > MAX_BYTES:
-        df = df.head(max(1, df.height // 2))
-        truncated_bytes = True
-
-    return {
-        "rows": df.height,
+    # Enforce the cap on the complete JSON payload, not Polars' in-memory
+    # estimate (which excludes JSON keys/escaping, metadata and column names).
+    data = df.to_dicts()
+    response: dict[str, Any] = {
+        "rows": len(data),
         "columns": df.columns,
-        "data": df.to_dicts(),
-        "truncated": truncated_rows or truncated_bytes,
+        "data": data,
+        "truncated": truncated_rows,
         "limits": {"max_rows": MAX_ROWS, "max_bytes": MAX_BYTES},
         "read_only": is_read_only(),
     }
+    while data and len(json.dumps(response, default=str).encode("utf-8")) > MAX_BYTES:
+        data = data[: len(data) // 2]
+        truncated_bytes = True
+        response.update(rows=len(data), data=data, truncated=True)
+
+    # An unusually wide schema can exceed the cap even with no rows. Preserve
+    # the contract by truncating the informational column list too.
+    response["truncated"] = truncated_rows or truncated_bytes
+    response_columns = list(response["columns"])
+    while response_columns and len(json.dumps(response, default=str).encode("utf-8")) > MAX_BYTES:
+        response_columns = response_columns[: len(response_columns) // 2]
+        response["columns"] = response_columns
+        response["truncated"] = True
+    return response
+
 
 @mcp.tool()
 def generate_code(operation: str) -> str:
@@ -235,6 +251,7 @@ ice = IceFrame(config)
 # TODO: Implement {operation}
 """
 
+
 @mcp.tool()
 def generate_sql(description: str) -> str:
     """
@@ -251,20 +268,18 @@ WHERE ...
 -- Add filters and aggregations as needed
 """
 
+
 @mcp.tool()
-def list_documentation() -> List[str]:
+def list_documentation() -> list[str]:
     """
     List available documentation files.
     """
     # Try to find docs folder relative to package or CWD
-    possible_paths = [
-        os.path.join(os.getcwd(), "docs"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
-    ]
+    possible_paths = _documentation_roots()
 
     docs_path = None
     for path in possible_paths:
-        if os.path.exists(path) and os.path.isdir(path):
+        if path.is_dir():
             docs_path = path
             break
 
@@ -272,11 +287,11 @@ def list_documentation() -> List[str]:
         return ["Error: Documentation directory not found."]
 
     files = []
-    for f in os.listdir(docs_path):
-        if f.endswith(".md"):
-            files.append(f)
+    for path in docs_path.rglob("*.md"):
+        files.append(path.relative_to(docs_path).as_posix())
 
     return sorted(files)
+
 
 @mcp.tool()
 def read_documentation(page: str) -> str:
@@ -287,30 +302,44 @@ def read_documentation(page: str) -> str:
         page: Name of the documentation file (e.g., 'ingest.md')
     """
     # Try to find docs folder
-    possible_paths = [
-        os.path.join(os.getcwd(), "docs"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
-    ]
+    possible_paths = _documentation_roots()
 
     docs_path = None
     for path in possible_paths:
-        if os.path.exists(path) and os.path.isdir(path):
-            docs_path = path
+        if path.is_dir():
+            docs_path = path.resolve()
             break
 
     if not docs_path:
         return "Error: Documentation directory not found."
 
-    file_path = os.path.join(docs_path, page)
+    file_path = (docs_path / page).resolve()
+    try:
+        file_path.relative_to(docs_path)
+    except ValueError:
+        raise ValidationError("Documentation page must remain inside the docs directory") from None
 
-    if not os.path.exists(file_path):
+    if file_path.suffix != ".md":
+        raise ValidationError("Documentation page must be a Markdown file")
+
+    if not file_path.is_file():
         return f"Error: File '{page}' not found in documentation."
 
     try:
-        with open(file_path) as f:
+        with file_path.open(encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         return f"Error reading file: {e}"
+
+
+def _documentation_roots() -> list[Path]:
+    """Source-checkout and installed data-file locations, in preference order."""
+    return [
+        Path.cwd() / "docs",
+        Path(__file__).resolve().parent.parent / "docs",
+        Path(sys.prefix) / "share" / "iceframe" / "docs",
+    ]
+
 
 def start():
     """Start the MCP server."""

@@ -2,29 +2,19 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-# Create a mock for FastMCP that acts as an identity decorator
-mock_mcp_instance = MagicMock()
-def identity_decorator():
-    def wrapper(func):
-        return func
-    return wrapper
-mock_mcp_instance.tool.side_effect = identity_decorator
+from iceframe.mcp_server import (
+    describe_table,
+    execute_query,
+    generate_code,
+    generate_sql,
+    get_table_stats,
+    list_documentation,
+    list_tables,
+    read_documentation,
+)
 
-# Patch FastMCP to return our mock instance
-with patch("mcp.server.fastmcp.FastMCP", return_value=mock_mcp_instance):
-    from iceframe.mcp_server import (
-        describe_table,
-        execute_query,
-        generate_code,
-        generate_sql,
-        get_table_stats,
-        list_documentation,
-        list_tables,
-        read_documentation,
-    )
 
 class TestMCPServer(unittest.TestCase):
-
     def setUp(self):
         # Mock environment variables
         self.env_patcher = patch.dict(os.environ, {"ICEBERG_CATALOG_URI": "http://mock"})
@@ -89,7 +79,7 @@ class TestMCPServer(unittest.TestCase):
         result = execute_query("test_table", query="col1 > 0", limit=5)
 
         mock_ice.read_table.assert_called_with(
-            "test_table", filter_expr="col1 > 0", limit=5, columns=None
+            "test_table", filter_sql="col1 > 0", limit=5, columns=None
         )
         self.assertEqual(result["rows"], 5)
         self.assertEqual(result["columns"], ["col1"])
@@ -106,33 +96,27 @@ class TestMCPServer(unittest.TestCase):
         self.assertIn("-- Generated SQL for: select all users", result)
         self.assertIn("SELECT *", result)
 
-    @patch("os.path.exists")
-    @patch("os.path.isdir")
-    @patch("os.listdir")
-    @patch("os.getcwd")
-    def test_list_documentation(self, mock_getcwd, mock_listdir, mock_isdir, mock_exists):
-        mock_getcwd.return_value = "/mock/cwd"
-        mock_exists.return_value = True
-        mock_isdir.return_value = True
-        mock_listdir.return_value = ["doc1.md", "doc2.txt"]
+    def test_list_documentation(self):
+        import tempfile
+        from pathlib import Path
 
-        result = list_documentation()
+        with tempfile.TemporaryDirectory() as root:
+            docs = Path(root)
+            (docs / "doc1.md").write_text("content")
+            (docs / "doc2.txt").write_text("ignored")
+            with patch("iceframe.mcp_server._documentation_roots", return_value=[docs]):
+                self.assertEqual(list_documentation(), ["doc1.md"])
 
-        self.assertEqual(result, ["doc1.md"])
+    def test_read_documentation(self):
+        import tempfile
+        from pathlib import Path
 
-    @patch("builtins.open", new_callable=unittest.mock.mock_open, read_data="content")
-    @patch("os.path.exists")
-    @patch("os.path.isdir")
-    @patch("os.getcwd")
-    def test_read_documentation(self, mock_getcwd, mock_isdir, mock_exists, mock_open):
-        mock_getcwd.return_value = "/mock/cwd"
-        mock_exists.return_value = True
-        mock_isdir.return_value = True
+        with tempfile.TemporaryDirectory() as root:
+            docs = Path(root)
+            (docs / "doc1.md").write_text("content")
+            with patch("iceframe.mcp_server._documentation_roots", return_value=[docs]):
+                self.assertEqual(read_documentation("doc1.md"), "content")
 
-        result = read_documentation("doc1.md")
-
-        self.assertEqual(result, "content")
-        mock_open.assert_called()
 
 if __name__ == "__main__":
     unittest.main()
