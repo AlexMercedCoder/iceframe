@@ -60,10 +60,30 @@ IceFrame maps Python/Pydantic types to Iceberg types as follows:
 | `int` | `long` |
 | `float` | `double` |
 | `bool` | `boolean` |
+| `bytes` | `binary` |
+| `Decimal` | `decimal(38, 9)` |
 | `datetime` | `timestamp` |
 | `date` | `date` |
-| `List[T]` | `list<T>` |
-| `Optional[T]` | `T` (nullable) |
+| `time` | `time` |
+| `UUID`, `Enum`, `Literal` | `string` |
+| `list[T]`, `set[T]`, `tuple[T, ...]` | `list<T>` |
+| `dict[K, V]` | `map<K, V>` |
+| A nested `BaseModel` | `struct` |
+| `T \| None`, `Optional[T]` | `T`, optional |
+
+A field is **required** when its type does not allow `None`, whether or not it
+has a default. `tags: list[str] = []` always has a value, so it is required;
+`email: str | None` can be null even without a default, so it is optional.
+Every field gets a unique id, including fields inside nested models, lists
+and maps.
+
+Polars marks every column nullable, so IceFrame accepts a DataFrame for a
+table with required fields as long as those columns contain no nulls, at any
+nesting level. A real null in a required column is still rejected.
+
+Before 0.15.0, `X | None` fell through to `string` (only `Optional[X]` was
+recognized), required was based on the default rather than the type, and
+nested field ids collided.
 
 ## Advanced Usage
 

@@ -65,35 +65,24 @@ def read_vortex(path: str, **kwargs) -> pl.DataFrame:
 
     Args:
         path: Path to the Vortex file
-        **kwargs: Additional arguments
+        **kwargs: Additional arguments passed to ``VortexFile.scan``
+            (for example ``projection`` or ``expr``)
 
     Returns:
         Polars DataFrame
-
-    .. warning::
-        This function is speculative and based on unverified research.
-        It assumes `vortex-data` API availability. Use with caution.
     """
     try:
         import vortex
-        # Assuming vortex.open().scan().read_all() returns an Arrow-compatible object or similar
-        # Based on research: vortex.open("example.vortex").scan().read_all()
-        # We need to verify what read_all() returns. It likely returns a Vortex Array which might support to_arrow()
-
-        vortex_array: Any = vortex.open(path).scan().read_all()
-
-        # Check if it has to_arrow() or similar
-        if hasattr(vortex_array, "to_arrow"):
-            return from_arrow_dataframe(vortex_array.to_arrow())
-        else:
-            raise TypeError("Vortex result does not expose to_arrow()")
-
     except ImportError:
         raise ImportError(
             "vortex-data is required. Install with 'pip install iceframe[vortex]'"
         ) from None
+
+    try:
+        array: Any = vortex.open(path).scan(**kwargs).read_all()
+        return from_arrow_dataframe(array.to_arrow_table())
     except Exception as e:
-        raise ValueError(f"Failed to read Vortex file: {e}") from e
+        raise ValueError(f"Failed to read Vortex file {path}: {e}") from e
 
 
 def read_excel(path: str, sheet_name: str = "Sheet1", **kwargs) -> pl.DataFrame:

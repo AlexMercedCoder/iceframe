@@ -4,27 +4,51 @@ Pydantic integration for IceFrame.
 Provides utilities to convert Pydantic models to Iceberg schemas and records.
 """
 
+from datetime import date, datetime, time
+from decimal import Decimal
+from enum import Enum
+from types import UnionType
 from typing import Any, Union, get_args, get_origin
+from uuid import UUID
 
 from pydantic import BaseModel
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
     IcebergType,
     ListType,
     LongType,
+    MapType,
     NestedField,
     StringType,
     StructType,
     TimestampType,
+    TimeType,
 )
+
+
+class _FieldIds:
+    """Hands out unique field ids across a schema, including nested fields."""
+
+    def __init__(self) -> None:
+        self._next = 0
+
+    def next(self) -> int:
+        self._next += 1
+        return self._next
 
 
 def to_iceberg_schema(model: type[BaseModel]) -> Schema:
     """
     Convert a Pydantic model to a PyIceberg Schema.
+
+    A field is ``required`` when its type does not admit ``None``, whether or
+    not it has a default: ``tags: list[str] = []`` always produces a value,
+    while ``email: str | None`` can produce a null even without a default.
 
     Args:
         model: Pydantic model class
@@ -32,78 +56,95 @@ def to_iceberg_schema(model: type[BaseModel]) -> Schema:
     Returns:
         PyIceberg Schema
     """
+    return Schema(*_model_fields(model, _FieldIds()))
+
+
+def _model_fields(model: type[BaseModel], ids: _FieldIds) -> list[NestedField]:
     fields = []
-    for i, (name, field_info) in enumerate(model.model_fields.items()):
-        # Determine if field is optional (nullable)
-        # Pydantic v2 uses annotation
-        annotation = field_info.annotation
-        required = field_info.is_required()
-
-        iceberg_type = _python_type_to_iceberg(annotation)
-
+    for name, field_info in model.model_fields.items():
+        field_id = ids.next()
+        inner, nullable = _unwrap_optional(field_info.annotation)
         fields.append(
-            NestedField(field_id=i + 1, name=name, field_type=iceberg_type, required=required)
+            NestedField(
+                field_id=field_id,
+                name=name,
+                field_type=_python_type_to_iceberg(inner, ids),
+                required=not nullable,
+            )
         )
+    return fields
 
-    return Schema(*fields)
+
+def _unwrap_optional(py_type: Any) -> tuple[Any, bool]:
+    """Split ``T | None`` / ``Optional[T]`` into ``(T, True)``."""
+    if get_origin(py_type) in (Union, UnionType):
+        args = get_args(py_type)
+        non_none = [a for a in args if a is not type(None)]
+        nullable = len(non_none) < len(args)
+        if len(non_none) == 1:
+            return non_none[0], nullable
+        return py_type, nullable
+    return py_type, False
 
 
-def _python_type_to_iceberg(py_type: Any) -> IcebergType:
+def _python_type_to_iceberg(py_type: Any, ids: _FieldIds | None = None) -> IcebergType:
     """Convert Python type to Iceberg type"""
+    ids = ids or _FieldIds()
+    py_type, _ = _unwrap_optional(py_type)
     origin = get_origin(py_type)
     args = get_args(py_type)
 
-    # Handle Optional/Union[T, None]
-    if origin is Union:
-        # Check if None is in args
-        non_none_args = [arg for arg in args if arg is not type(None)]
-        if len(non_none_args) == 1:
-            return _python_type_to_iceberg(non_none_args[0])
-        # Complex unions not supported yet, default to string?
-        # Or maybe Struct?
+    if origin in (Union, UnionType):
+        # A union of several concrete types has no single Iceberg type.
         return StringType()
 
+    # bool before int: bool is a subclass of int.
+    if py_type is bool:
+        return BooleanType()
+    if py_type is int:
+        return LongType()
+    if py_type is float:
+        return DoubleType()
     if py_type is str:
         return StringType()
-    elif py_type is int:
-        return LongType()  # Default to Long for safety
-    elif py_type is float:
-        return DoubleType()
-    elif py_type is bool:
-        return BooleanType()
-
-    # Handle Lists
-    if origin is list or origin is list:
-        element_type = args[0] if args else str
-        return ListType(
-            element_id=0,  # ID will be assigned by schema creation? No, need to be careful
-            element=_python_type_to_iceberg(element_type),
-            element_required=False,  # Assume elements can be null?
-        )
-
-    # Handle nested Pydantic models
-    if isinstance(py_type, type) and issubclass(py_type, BaseModel):
-        fields = []
-        for i, (name, field_info) in enumerate(py_type.model_fields.items()):
-            fields.append(
-                NestedField(
-                    field_id=i + 1,  # Nested IDs need management
-                    name=name,
-                    field_type=_python_type_to_iceberg(field_info.annotation),
-                    required=field_info.is_required(),
-                )
-            )
-        return StructType(*fields)
-
-    # Date/Time handling requires more specific types (datetime.date, datetime.datetime)
-    from datetime import date, datetime
-
+    if py_type is bytes:
+        return BinaryType()
+    if py_type is Decimal:
+        return DecimalType(38, 9)
     if py_type is datetime:
         return TimestampType()
     if py_type is date:
         return DateType()
+    if py_type is time:
+        return TimeType()
+    if py_type is UUID:
+        return StringType()
 
-    # Default fallback
+    if origin in (list, set, tuple) or py_type in (list, set, tuple):
+        element, element_nullable = _unwrap_optional(args[0] if args else str)
+        element_id = ids.next()
+        return ListType(
+            element_id=element_id,
+            element=_python_type_to_iceberg(element, ids),
+            element_required=not element_nullable,
+        )
+
+    if origin is dict or py_type is dict:
+        key_type = args[0] if len(args) == 2 else str
+        value, value_nullable = _unwrap_optional(args[1] if len(args) == 2 else str)
+        key_id, value_id = ids.next(), ids.next()
+        return MapType(
+            key_id=key_id,
+            key_type=_python_type_to_iceberg(key_type, ids),
+            value_id=value_id,
+            value_type=_python_type_to_iceberg(value, ids),
+            value_required=not value_nullable,
+        )
+
+    if isinstance(py_type, type) and issubclass(py_type, BaseModel):
+        return StructType(*_model_fields(py_type, ids))
+
+    # Enums, Literals and anything else are stored as their string form.
     return StringType()
 
 
@@ -112,4 +153,17 @@ class PydanticMixin(BaseModel):
 
     def to_iceberg_record(self) -> dict[str, Any]:
         """Convert model instance to dictionary suitable for Iceberg insertion"""
-        return dict(self.model_dump())
+        return {k: _to_iceberg_value(v) for k, v in self.model_dump().items()}
+
+
+def _to_iceberg_value(value: Any) -> Any:
+    """Match the schema from to_iceberg_schema: UUIDs, enums and sets as stored."""
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Enum):
+        return str(value.value)
+    if isinstance(value, dict):
+        return {k: _to_iceberg_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_iceberg_value(v) for v in value]
+    return value
