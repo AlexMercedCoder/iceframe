@@ -2,6 +2,50 @@
 
 All notable changes to IceFrame are documented in this file.
 
+## Unreleased
+
+No changes yet.
+
+## 0.14.0 — 2026-09-30
+
+### Security and correctness
+
+- Restricted MCP documentation reads to packaged Markdown below the docs root,
+  preventing path traversal into `.env` and other workspace files.
+- Repaired async executor completion, executor-local catalog handles, cleanup,
+  and query execution on the owned bounded pool.
+- Updated bulk `add_files`, rollback-by-timestamp, ORC ingestion, partition
+  evolution, branch listing, and streaming auto-compaction for the supported
+  PyIceberg/Polars APIs.
+- `scan_batches(batch_size=...)` and `read_table_chunked(chunk_size=...)` now
+  honor their requested sizes.
+- `create_view` now works against catalogs that implement Iceberg views. It
+  passed `sql=` to `Catalog.create_view`, which takes no such argument, so every
+  call failed. It now builds a spec-compliant view version and takes the
+  view's result `schema` (PyArrow, PyIceberg or Polars), which the spec
+  requires. Catalogs without view support, and PyIceberg 0.11, raise
+  `UnsupportedOperationError` instead of a generic `RuntimeError`.
+
+### UX, packaging, and verification
+
+- Unified CLI/library catalog environment loading and nonzero CLI failure exits.
+- Added real API contract tests, MCP/agent response caps, query `explain()`,
+  primary-key-aware CDC, and thread-safe in-memory caching.
+- The `all` and `ingestion` extras now match their names; Markdown docs ship in
+  distributions. Added license, contribution, security, support, and current
+  roadmap documents.
+- Formatting, typing, coverage, and test timeouts are required CI gates.
+- The `dev` extra now installs everything the offline suite imports (the CLI
+  stack and pandas), and the DataFusion, Ray and Altair tests no longer need
+  those optional packages installed, so a fresh `pip install -e ".[dev]"`
+  runs the whole suite.
+- Eliminated the full-package mypy backlog: all 53 shipped modules are now
+  checked, including previously untyped function bodies, with zero errors.
+- Upgraded the optional MCP integration to the official Python SDK 2.1 series,
+  migrated the server to `MCPServer`, and added protocol-level tests for both
+  the 2026-07-28 transport and legacy initialize-era clients.
+- Raised the supported Python floor to 3.10 and test 3.10-3.13 in CI.
+
 ## 0.13.0 — 2026-08-09
 
 A correctness, verifiability and API-completeness release. Three of the fixes

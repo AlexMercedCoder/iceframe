@@ -4,7 +4,10 @@ A DataFrame-like library for working with Apache Iceberg tables using REST catal
 
 IceFrame provides a simple, intuitive API for creating, reading, updating, and deleting Iceberg tables, as well as performing maintenance operations and exporting data.
 
-> **Upgrading from 0.12?** **0.13.0 fixes silent data loss and silently wrong query results.** `compact_data_files(filter_expr=...)` used to replace the *whole* table with the filtered subset; a compound filter whose operand couldn't be pushed down had that operand silently dropped; null rows passed every data-quality constraint; `expire_snapshots` called a PyIceberg API that doesn't exist; and `create_table(sort_order=["col"])` raised `AttributeError`. All are fixed with regression tests. See [`CHANGELOG.md`](CHANGELOG.md) for the full list and behaviour changes.
+> **IceFrame 0.14.0** requires Python 3.10+, upgrades the optional MCP server to
+> the official Python SDK 2.1 protocol stack, and completes full-package static
+> type checking. It also includes the correctness, UX, packaging, and
+> performance hardening listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Features
 
@@ -89,6 +92,8 @@ IceFrame provides a simple, intuitive API for creating, reading, updating, and d
 
 ## Installation
 
+IceFrame requires Python 3.10 or newer and supports Python 3.10-3.13.
+
 ```bash
 pip install iceframe
 ```
@@ -100,6 +105,10 @@ pip install "iceframe[aws]"   # AWS S3
 pip install "iceframe[gcs]"   # Google Cloud Storage
 pip install "iceframe[azure]" # Azure Data Lake Storage
 ```
+
+Install every optional runtime integration with `pip install "iceframe[all]"`.
+For a smaller environment, prefer only the extras listed in
+[Dependencies](docs/dependencies.md).
 
 ## Quick Start
 
@@ -257,6 +266,8 @@ pip install -e ".[dev]"
 pytest                 # runs offline against a local SQLite catalog
 pytest --live          # additionally runs the live REST-catalog tests
 ruff check iceframe/ tests/
+ruff format --check iceframe/ tests/
+mypy iceframe/
 ```
 
 The core suite needs **no credentials and no network**: a session-scoped
@@ -297,3 +308,15 @@ Being straight about the limits:
 - **Joins read each joined table in full.** Only the driving table gets pushdown.
 - **Z-order is an approximation** — a hierarchical sort, not a bit-interleaved Z-curve. The returned `strategy` says so.
 - **Window functions run locally in Polars**, after the scan.
+- **Joins and column-level merge rules materialize locally.** Call
+  `query.explain()` before running an unfamiliar plan at scale; use native
+  `ice.upsert()` or a distributed SQL engine for large mutations and joins.
+
+## Project policies
+
+- [Current roadmap](roadmap.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Support and releases](SUPPORT.md)
+- [Performance benchmarks](benchmarks/README.md)
+- [Apache-2.0 license](LICENSE)

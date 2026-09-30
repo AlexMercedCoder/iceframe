@@ -7,8 +7,9 @@ name = "iceframe"
 dynamic = ["version"]
 description = "A DataFrame-like library for working with Apache Iceberg tables"
 readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     {name = "Alex Merced", email = "alex@alexmerced.com"}
 ]
@@ -16,9 +17,7 @@ keywords = ["iceberg", "dataframe", "data engineering", "apache iceberg"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -68,12 +67,14 @@ all = [
     "iceframe[hf]",
     "iceframe[html]",
     "iceframe[clipboard]",
-    "python-dotenv>=1.0.0",
+    "iceframe[pdf,cli,mcp,agent,cache,streaming,monitoring,notebook,pydantic,datafusion,distributed,viz]",
 ]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-timeout>=2.3.0",
+    "mcp>=2.1.1,<3",
     "black>=23.0.0",
     "ruff>=0.0.270",
     "mypy>=1.3.0",
@@ -82,6 +83,11 @@ dev = [
     # needs SQLAlchemy. Without this the whole core suite errors out on a
     # fresh checkout (and in CI).
     "pyiceberg[sql-sqlite]>=0.11.0",
+    # The CLI is a shipped surface, so its tests must run in CI, and several
+    # ingestion tests build their fixtures with pandas.
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pandas>=2.0.0",
 ]
 pdf = [
     "fpdf2>=2.7.0",
@@ -95,9 +101,9 @@ vortex = ["vortex-data>=0.1.0"]
 excel = ["fastexcel>=0.9.0"]
 gsheets = ["gspread>=6.0.0"]
 hudi = ["getdaft>=0.2.0"]
-mcp = ["mcp>=0.1.0"]
+mcp = ["mcp>=2.1.1,<3"]
 ingestion = [
-    "iceframe[delta,lance,vortex,excel,gsheets,hudi]",
+    "iceframe[delta,lance,vortex,excel,gsheets,hudi,sql,xml,stats,api,hf,html,clipboard]",
 ]
 cli = [
     "typer>=0.9.0",
@@ -150,14 +156,14 @@ viz = [
 ]
 
 [project.scripts]
-iceframe = "iceframe.cli:app"
-iceframe-chat = "iceframe.agent_cli:app"
+iceframe = "iceframe.entrypoints:cli"
+iceframe-chat = "iceframe.entrypoints:chat"
 
 [project.urls]
-Homepage = "https://github.com/alexmerced/iceframe"
-Documentation = "https://github.com/alexmerced/iceframe/tree/main/docs"
-Repository = "https://github.com/alexmerced/iceframe"
-Issues = "https://github.com/alexmerced/iceframe/issues"
+Homepage = "https://github.com/AlexMercedCoder/iceframe"
+Documentation = "https://github.com/AlexMercedCoder/iceframe/tree/main/docs"
+Repository = "https://github.com/AlexMercedCoder/iceframe"
+Issues = "https://github.com/AlexMercedCoder/iceframe/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "iceframe.__version__"}
@@ -170,12 +176,17 @@ exclude = ["tests*", "scripts*", "docs*"]
 [tool.setuptools.package-data]
 iceframe = ["py.typed"]
 
+[tool.setuptools.data-files]
+"share/iceframe/docs" = ["docs/*.md"]
+"share/iceframe/docs/recipes" = ["docs/recipes/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --strict-markers"
+timeout = 60
 markers = [
     "live: test requires a live REST catalog (opt in with --live)",
     "slow: long-running test",
@@ -183,11 +194,11 @@ markers = [
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -201,9 +212,6 @@ select = [
 ignore = [
     "E501",   # line length is handled by the formatter
     "E741",   # ambiguous variable names (l, I) in vendored-style code
-    "UP006",  # keep typing.List/Dict: requires-python is >= 3.9
-    "UP035",  # ditto
-    "UP007",  # Optional[X] over X | None for the same reason
     "B008",   # function call in default arg (typer/pydantic idiom)
 ]
 
@@ -214,7 +222,10 @@ ignore = [
 "iceframe/__init__.py" = ["E402"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+ignore_missing_imports = true
+check_untyped_defs = true
+files = ["iceframe"]
