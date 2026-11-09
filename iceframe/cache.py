@@ -152,10 +152,10 @@ class DiskCache(QueryCache):
     def __init__(self, cache_dir: str = ".iceframe_cache", max_size_gb: float = 1.0):
         super().__init__(max_size=10**9)  # disk capacity bound is enforced by diskcache
         try:
-            import diskcache  # noqa: F401
+            import diskcache_community  # noqa: F401
         except ImportError:
             raise ImportError(
-                "diskcache required for disk caching. Install with: pip install 'iceframe[cache]'"
+                "diskcache-community required for disk caching. Install with: pip install 'iceframe[cache]'"
             ) from None
         import os
 
@@ -165,11 +165,12 @@ class DiskCache(QueryCache):
         # diskcache index in <cache_dir>/index/ holds metadata pointers.
         self._data_dir = os.path.join(self.cache_dir, "data")
         os.makedirs(self._data_dir, exist_ok=True)
-        import diskcache
+        from diskcache_community import Cache, SafeDisk
 
-        self.cache = diskcache.Cache(
+        self.cache = Cache(
             os.path.join(self.cache_dir, "index"),
             size_limit=int(max_size_gb * 1024**3),
+            disk=SafeDisk.with_options(on_error="miss"),
         )
 
     def _payload_path(self, key: str) -> str:
